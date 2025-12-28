@@ -1,9 +1,8 @@
 ARG BUILD_FROM=node:20-alpine
 FROM ${BUILD_FROM}
 
-# Installer les dépendances système nécessaires
+# Installer les dépendances système nécessaires pour compiler les modules natifs
 RUN apk add --no-cache \
-    python3 \
     make \
     g++ \
     linux-headers \
