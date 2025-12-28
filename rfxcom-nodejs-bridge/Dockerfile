@@ -1,4 +1,5 @@
-FROM node:20-alpine
+ARG BUILD_FROM=node:20-alpine
+FROM ${BUILD_FROM}
 
 # Installer les dépendances système nécessaires
 RUN apk add --no-cache \
