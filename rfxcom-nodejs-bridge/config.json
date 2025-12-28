@@ -6,6 +6,7 @@
   "arch": ["aarch64", "amd64", "armhf", "armv7", "i386"],
   "startup": "application",
   "boot": "auto",
+  "homeassistant": "2023.1.0",
   "options": {
     "port": "/dev/ttyUSB0",
     "api_port": 8888
@@ -20,6 +21,7 @@
   "ports_description": {
     "8888/tcp": "API HTTP pour le plugin Python"
   },
-  "image": "rfxcom-nodejs-bridge-{arch}"
+  "image": "rfxcom-nodejs-bridge-{arch}",
+  "map": ["config:rw"]
 }
 
