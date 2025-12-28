@@ -1,18 +1,15 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Créer le répertoire de travail
-WORKDIR /app
+# Install requirements for add-on
+RUN \
+  apk add --no-cache \
+    nodejs \
+    npm
 
-# Copier package.json et installer les dépendances
-COPY package.json ./
-RUN npm install --production
+# Copy data for add-on
+COPY app.js /
+COPY run.sh /
+RUN chmod a+x /run.sh
 
-# Copier le code de l'application
-COPY rfxcom_bridge_server.js ./
-
-# Exposer le port de l'API
-EXPOSE 8888
-
-# Démarrer le serveur
-CMD ["node", "rfxcom_bridge_server.js"]
+CMD [ "/run.sh" ]

@@ -3,7 +3,7 @@ description: "Bridge Node.js pour la communication RFXCOM via le package node-rf
 version: "1.0.0"
 slug: "rfxcom-nodejs-bridge"
 init: false
-startup: application
+startup: services
 boot: auto
 homeassistant: "2023.1.0"
 arch:
