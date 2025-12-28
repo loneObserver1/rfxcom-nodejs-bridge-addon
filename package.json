@@ -1,0 +1,15 @@
+{
+  "name": "rfxcom-nodejs-bridge",
+  "version": "1.0.0",
+  "description": "Bridge Node.js pour RFXCOM via HTTP API",
+  "main": "rfxcom_bridge_server.js",
+  "scripts": {
+    "start": "node rfxcom_bridge_server.js"
+  },
+  "dependencies": {
+    "rfxcom": "^2.6.0"
+  },
+  "author": "",
+  "license": "MIT"
+}
+
