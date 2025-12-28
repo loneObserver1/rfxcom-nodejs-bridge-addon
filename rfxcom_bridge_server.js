@@ -10,21 +10,36 @@ const rfxcom = require('rfxcom');
 
 // Configuration depuis les options de l'add-on
 const PORT = process.env.API_PORT || 8888;
-const SERIAL_PORT = process.env.PORT || '/dev/ttyUSB0';
+// Le port série sera transmis par le plugin via l'API
+let currentSerialPort = process.env.PORT || '/dev/ttyUSB0';
 
 let rfxtrx = null;
 let handlers = {};
 let isInitialized = false;
 
-// Initialiser la connexion RFXCOM
-function initializeRFXCOM() {
-    if (isInitialized) {
+// Initialiser la connexion RFXCOM avec un port spécifique
+function initializeRFXCOM(serialPort) {
+    // Si déjà initialisé avec le même port, ne rien faire
+    if (isInitialized && currentSerialPort === serialPort) {
         return Promise.resolve();
     }
 
+    // Si déjà initialisé avec un autre port, fermer la connexion précédente
+    if (isInitialized && rfxtrx) {
+        try {
+            rfxtrx.close();
+        } catch (error) {
+            console.warn('⚠️ Erreur lors de la fermeture de la connexion précédente:', error);
+        }
+        isInitialized = false;
+        handlers = {};
+    }
+
+    currentSerialPort = serialPort || currentSerialPort;
+
     return new Promise((resolve, reject) => {
         try {
-            rfxtrx = new rfxcom.RfxCom(SERIAL_PORT, {
+            rfxtrx = new rfxcom.RfxCom(currentSerialPort, {
                 debug: false
             });
 
@@ -35,7 +50,7 @@ function initializeRFXCOM() {
                     return;
                 }
 
-                console.log('✅ RFXCOM initialisé sur', SERIAL_PORT);
+                console.log('✅ RFXCOM initialisé sur', currentSerialPort);
                 isInitialized = true;
                 resolve();
             });
@@ -102,9 +117,10 @@ function getHandler(protocol) {
 }
 
 // Envoyer une commande
-async function sendCommand(protocol, deviceId, houseCode, unitCode, command) {
-    if (!isInitialized) {
-        await initializeRFXCOM();
+async function sendCommand(protocol, deviceId, houseCode, unitCode, command, serialPort) {
+    // Initialiser avec le port transmis (ou utiliser le port actuel)
+    if (!isInitialized || (serialPort && serialPort !== currentSerialPort)) {
+        await initializeRFXCOM(serialPort);
     }
 
     const handler = getHandler(protocol);
@@ -174,7 +190,7 @@ const server = http.createServer(async (req, res) => {
         res.end(JSON.stringify({
             status: 'ok',
             initialized: isInitialized,
-            port: SERIAL_PORT
+            port: currentSerialPort
         }));
         return;
     }
@@ -190,7 +206,7 @@ const server = http.createServer(async (req, res) => {
         req.on('end', async () => {
             try {
                 const data = JSON.parse(body);
-                const { protocol, device_id, house_code, unit_code, command } = data;
+                const { protocol, device_id, house_code, unit_code, command, port } = data;
 
                 if (!protocol || !command) {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -206,7 +222,8 @@ const server = http.createServer(async (req, res) => {
                     device_id,
                     house_code,
                     unit_code,
-                    command
+                    command,
+                    port  // Transmettre le port série si fourni
                 );
 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -234,12 +251,10 @@ const server = http.createServer(async (req, res) => {
 // Démarrer le serveur
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`🚀 Serveur RFXCOM Node.js Bridge démarré sur le port ${PORT}`);
-    console.log(`📡 Port série: ${SERIAL_PORT}`);
+    console.log(`📡 Port série par défaut: ${currentSerialPort}`);
+    console.log(`💡 Le port série sera configuré par le plugin via l'API /api/init`);
     
-    // Initialiser RFXCOM au démarrage
-    initializeRFXCOM().catch((error) => {
-        console.error('❌ Erreur lors de l\'initialisation:', error);
-    });
+    // Ne plus initialiser automatiquement - le plugin le fera via l'API
 });
 
 // Gérer l'arrêt propre
