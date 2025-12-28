@@ -5,9 +5,6 @@
     "armhf": "node:20-alpine",
     "armv7": "node:20-alpine",
     "i386": "node:20-alpine"
-  },
-  "args": {
-    "BUILD_FROM": "node:20-alpine"
   }
 }
 
