@@ -22,6 +22,10 @@
     "8888/tcp": "API HTTP pour le plugin Python"
   },
   "image": "rfxcom-nodejs-bridge-{arch}",
-  "map": ["config:rw"]
+  "map": ["config:rw"],
+  "ingress": false,
+  "panel_icon": "mdi:radio",
+  "panel_title": "RFXCOM Bridge",
+  "panel_admin": false
 }
 
