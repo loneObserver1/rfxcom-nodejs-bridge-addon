@@ -2,9 +2,14 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.0.6**
+**Version actuelle : 2.0.7**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.0.7
+- **Correction de la prise en compte des valeurs saisies** : Les Device ID et Unit Code saisis dans le formulaire sont maintenant correctement utilisés
+- **Correction de l'erreur de renommage** : Fonction `fetchDevices()` corrigée pour convertir l'objet en tableau
+- **Gestion correcte de unitCode = 0** : La valeur 0 est maintenant reconnue comme valide
 
 ### Version 2.0.6
 - **Correction de l'erreur de renommage** : Fonction `fetchDevices()` ajoutée dans le frontend

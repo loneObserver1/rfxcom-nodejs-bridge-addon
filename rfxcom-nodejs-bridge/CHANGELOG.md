@@ -5,6 +5,25 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.0.7] - 2025-12-29
+
+### 🔧 Corrections
+- **Correction de la prise en compte des valeurs saisies pour les appareils AC** :
+  - Les valeurs Device ID et Unit Code saisies dans le formulaire sont maintenant correctement utilisées
+  - Gestion correcte du cas `unitCode = 0` (valeur valide)
+  - Amélioration de la validation et normalisation des valeurs
+  - Logs ajoutés pour tracer les valeurs reçues et utilisées
+- **Correction de l'erreur de renommage** : Fonction `fetchDevices()` corrigée pour convertir l'objet en tableau
+
+### 🛠️ Améliorations
+- Amélioration de la logique de vérification des valeurs dans le backend
+- Validation explicite des valeurs du formulaire dans le frontend
+- Conversion en majuscules automatique pour Device ID
+
+### 📝 Documentation
+- Ajout des fichiers de test (`test_*.js`) au suivi Git
+- Retrait de `test_*.js` du `.gitignore`
+
 ## [2.0.6] - 2025-12-29
 
 ### 🔧 Corrections
