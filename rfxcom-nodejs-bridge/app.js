@@ -967,25 +967,12 @@ function sendArcCommand(deviceId, command, res) {
 
     try {
         // Pour Lighting1 (ARC), utiliser les méthodes wrapper switchUp, switchDown, stop
-        // Note: ON peut aussi désappairer si l'appareil n'est pas appairé
+        // Note: Les commandes ON/OFF/STOP ne modifient pas l'état d'appairage
+        // L'appairage/désappairage se fait uniquement via les endpoints /pair et /unpair
         if (command === 'on' || command === 'up') {
             lighting1Handler.switchUp(device.houseCode, device.unitCode, callback);
-            // Si l'appareil n'est pas appairé, ON l'appaire
-            if (!device.paired) {
-                device.paired = true;
-                device.pairedAt = new Date().toISOString();
-                saveDevices();
-            }
         } else if (command === 'off' || command === 'down') {
             lighting1Handler.switchDown(device.houseCode, device.unitCode, callback);
-            // OFF désappaire l'appareil
-            if (device.paired) {
-                device.paired = false;
-                if (device.pairedAt) {
-                    delete device.pairedAt;
-                }
-                saveDevices();
-            }
         } else if (command === 'stop') {
             lighting1Handler.stop(device.houseCode, device.unitCode, callback);
         } else {
@@ -1132,25 +1119,12 @@ function sendAcCommand(deviceId, command, res) {
         // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
         const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
 
-        // Note: ON peut aussi désappairer si l'appareil n'est pas appairé
+        // Note: Les commandes ON/OFF ne modifient pas l'état d'appairage
+        // L'appairage/désappairage se fait uniquement via les endpoints /pair et /unpair
         if (command === 'on') {
             lighting2Handler.switchOn(deviceIdFormatted, callback);
-            // Si l'appareil n'est pas appairé, ON l'appaire
-            if (!device.paired) {
-                device.paired = true;
-                device.pairedAt = new Date().toISOString();
-                saveDevices();
-            }
         } else if (command === 'off') {
             lighting2Handler.switchOff(deviceIdFormatted, callback);
-            // OFF désappaire l'appareil
-            if (device.paired) {
-                device.paired = false;
-                if (device.pairedAt) {
-                    delete device.pairedAt;
-                }
-                saveDevices();
-            }
         } else {
             return res.status(400).json({
                 status: 'error',
