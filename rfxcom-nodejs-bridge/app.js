@@ -165,6 +165,7 @@ if (!fs.existsSync(SERIAL_PORT)) {
 // Initialiser le module RFXCOM
 let rfxtrx = null;
 let lighting1Handler = null;
+let lighting2Handler = null;
 let mqttHelper = null;
 
 // Récupérer les paramètres MQTT depuis les variables d'environnement (pour utilisation après initialisation RFXCOM)
@@ -199,14 +200,17 @@ function initializeMQTT() {
         mqttHelper.setMessageHandler((topic, message) => {
             log('debug', `📨 Message MQTT reçu: ${topic} -> ${message}`);
 
-            // Format: rfxcom/cover/{deviceId}/set ou rfxcom/cover/{deviceId}/set_position
+            // Format: rfxcom/cover/{deviceId}/set ou rfxcom/switch/{deviceId}/set
             const parts = topic.split('/');
-            if (parts.length >= 4 && parts[0] === 'rfxcom' && parts[1] === 'cover') {
+            if (parts.length >= 4 && parts[0] === 'rfxcom') {
+                const deviceType = parts[1]; // 'cover' ou 'switch'
                 const deviceId = parts[2];
                 const commandType = parts[3];
 
-                if (devices[deviceId] && devices[deviceId].type === 'ARC' && lighting1Handler) {
+                // Gestion des volets ARC
+                if (deviceType === 'cover' && devices[deviceId] && devices[deviceId].type === 'ARC' && lighting1Handler) {
                     const device = devices[deviceId];
+                    // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
 
                     if (commandType === 'set') {
                         // Commandes: OPEN, CLOSE, STOP
@@ -239,6 +243,39 @@ function initializeMQTT() {
                                     log('error', `❌ Erreur commande STOP: ${error.message}`);
                                 } else {
                                     log('info', `✅ Commande STOP envoyée à ${device.name}`);
+                                }
+                            });
+                        }
+                    }
+                }
+                // Gestion des prises AC
+                else if (deviceType === 'switch' && devices[deviceId] && devices[deviceId].type === 'AC' && lighting2Handler) {
+                    const device = devices[deviceId];
+                    // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
+                    const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
+
+                    if (commandType === 'set') {
+                        // Commandes: ON, OFF
+                        if (message === 'ON' || message === 'on') {
+                            lighting2Handler.switchOn(deviceIdFormatted, (error) => {
+                                if (error) {
+                                    log('error', `❌ Erreur commande ON: ${error.message}`);
+                                } else {
+                                    log('info', `✅ Commande ON envoyée à ${device.name}`);
+                                    if (mqttHelper) {
+                                        mqttHelper.publishSwitchState(deviceId, 'ON');
+                                    }
+                                }
+                            });
+                        } else if (message === 'OFF' || message === 'off') {
+                            lighting2Handler.switchOff(deviceIdFormatted, (error) => {
+                                if (error) {
+                                    log('error', `❌ Erreur commande OFF: ${error.message}`);
+                                } else {
+                                    log('info', `✅ Commande OFF envoyée à ${device.name}`);
+                                    if (mqttHelper) {
+                                        mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                    }
                                 }
                             });
                         }
@@ -285,6 +322,9 @@ function initializeRFXCOMAsync() {
 
                 // Créer le handler pour Lighting1 (ARC, etc.)
                 lighting1Handler = new rfxcom.Lighting1(rfxtrx, rfxcom.lighting1.ARC);
+                
+                // Créer le handler pour Lighting2 (AC, DIO Chacon, etc.)
+                lighting2Handler = new rfxcom.Lighting2(rfxtrx, rfxcom.lighting2.AC);
 
                 // Écouter les messages si la détection automatique est activée
                 if (AUTO_DISCOVERY) {
@@ -334,6 +374,8 @@ function initializeRFXCOMAsync() {
                                         const device = devices[deviceId];
                                         if (device.type === 'ARC') {
                                             mqttHelper.publishCoverDiscovery({ ...device, id: deviceId });
+                                        } else if (device.type === 'AC') {
+                                            mqttHelper.publishSwitchDiscovery({ ...device, id: deviceId });
                                         } else if (device.type === 'TEMP_HUM') {
                                             mqttHelper.publishTempHumDiscovery({ ...device, id: deviceId });
                                         }
@@ -417,6 +459,30 @@ function handleReceivedMessage(msg) {
             // Publier la découverte Home Assistant
             if (mqttHelper && mqttHelper.connected) {
                 mqttHelper.publishCoverDiscovery({ ...devices[id], id: id });
+            }
+        }
+    }
+
+    // Détecter les nouveaux appareils AC (Lighting2)
+    if (msg.type === 'lighting2' && msg.subtype === 'AC') {
+        const deviceId = msg.id || msg.deviceId || msg.ID || 'unknown';
+        const unitCode = msg.unitCode || msg.unit || 0;
+        const id = `AC_${deviceId}_${unitCode}`;
+        if (!devices[id]) {
+            log('info', `🆕 Nouvel appareil AC détecté: ${deviceId}, Unit ${unitCode}`);
+            devices[id] = {
+                type: 'AC',
+                name: `AC ${deviceId}/${unitCode}`,
+                deviceId: deviceId.toString().toUpperCase(),
+                unitCode: unitCode,
+                discovered: true,
+                discoveredAt: new Date().toISOString()
+            };
+            saveDevices();
+
+            // Publier la découverte Home Assistant
+            if (mqttHelper && mqttHelper.connected) {
+                mqttHelper.publishSwitchDiscovery({ ...devices[id], id: id });
             }
         }
     }
@@ -665,6 +731,7 @@ app.post('/api/devices/arc/pair', (req, res) => {
         }
 
         // Envoyer ON pour l'appairage
+        // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
         lighting1Handler.switchOn(device.houseCode, device.unitCode, (error) => {
             if (error) {
                 log('error', `❌ Erreur lors de l'appairage:`, error);
@@ -780,6 +847,7 @@ function sendArcCommand(deviceId, command, res) {
     };
 
     try {
+        // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
         if (command === 'on' || command === 'up') {
             lighting1Handler.switchOn(device.houseCode, device.unitCode, callback);
         } else if (command === 'off' || command === 'down' || command === 'stop') {
@@ -872,6 +940,327 @@ app.post('/api/devices/arc/:id/stop', (req, res) => {
         sendArcCommand(req.params.id, 'stop', res);
     } catch (error) {
         log('error', `❌ Erreur lors de l'envoi de la commande STOP:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Fonction helper pour envoyer une commande AC
+function sendAcCommand(deviceId, command, res) {
+    if (!deviceId || !devices[deviceId]) {
+        return res.status(404).json({
+            status: 'error',
+            error: 'Appareil non trouvé'
+        });
+    }
+
+    const device = devices[deviceId];
+    if (device.type !== 'AC') {
+        return res.status(400).json({
+            status: 'error',
+            error: 'Cet appareil n\'est pas de type AC'
+        });
+    }
+
+    if (!lighting2Handler) {
+        return res.status(500).json({
+            status: 'error',
+            error: 'RFXCOM non initialisé'
+        });
+    }
+
+    // Envoyer la commande
+    log('info', `📤 Envoi de la commande ${command} à ${device.name} (Device ID: ${device.deviceId}, Unit: ${device.unitCode})`);
+
+    let responseSent = false;
+
+    // Le callback du package rfxcom n'est souvent appelé qu'en cas d'erreur
+    const callback = (error) => {
+        if (responseSent) {
+            return;
+        }
+
+        if (error) {
+            responseSent = true;
+            log('error', `❌ Erreur lors de l'envoi de la commande ${command}:`, error);
+            return res.status(500).json({
+                status: 'error',
+                error: error.message
+            });
+        }
+    };
+
+    try {
+        // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
+        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
+
+        if (command === 'on') {
+            lighting2Handler.switchOn(deviceIdFormatted, callback);
+        } else if (command === 'off') {
+            lighting2Handler.switchOff(deviceIdFormatted, callback);
+        } else {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Commande invalide (utilisez "on" ou "off")'
+            });
+        }
+
+        // Envoyer la réponse immédiatement après l'appel
+        responseSent = true;
+        log('info', `✅ Commande ${command} transmise à ${device.name} via RFXCOM`);
+        res.json({
+            status: 'success',
+            message: `Commande ${command} envoyée avec succès`,
+            device: deviceId,
+            command: command
+        });
+    } catch (error) {
+        if (!responseSent) {
+            responseSent = true;
+            log('error', `❌ Exception lors de l'envoi de la commande ${command}:`, error);
+            return res.status(500).json({
+                status: 'error',
+                error: error.message
+            });
+        }
+    }
+}
+
+// Ajouter un appareil AC
+app.post('/api/devices/ac', (req, res) => {
+    try {
+        log('info', `📥 Requête reçue pour ajouter un appareil AC`);
+        const { name, deviceId, unitCode } = req.body;
+        log('info', `📝 Données reçues: name="${name}", deviceId="${deviceId}", unitCode="${unitCode || 'auto'}"`);
+
+        if (!name) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Le nom est requis'
+            });
+        }
+
+        if (!deviceId) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Le Device ID est requis (ex: 02382C82)'
+            });
+        }
+
+        // Normaliser le deviceId (enlever 0x si présent, mettre en majuscules)
+        const normalizedDeviceId = deviceId.toString().replace(/^0x/i, '').toUpperCase();
+        const finalUnitCode = unitCode || 0;
+        const id = `AC_${normalizedDeviceId}_${finalUnitCode}`;
+
+        // Vérifier si l'appareil existe déjà
+        if (devices[id]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil existe déjà'
+            });
+        }
+
+        // Créer l'appareil
+        devices[id] = {
+            type: 'AC',
+            name: name,
+            deviceId: normalizedDeviceId,
+            unitCode: finalUnitCode,
+            createdAt: new Date().toISOString()
+        };
+
+        saveDevices();
+        log('info', `✅ Appareil AC ajouté: ${name} (${normalizedDeviceId}/${finalUnitCode})`);
+
+        // Publier la découverte Home Assistant
+        if (mqttHelper && mqttHelper.connected) {
+            mqttHelper.publishSwitchDiscovery({ ...devices[id], id: id });
+        }
+
+        res.json({
+            status: 'success',
+            message: 'Appareil AC ajouté avec succès',
+            device: devices[id],
+            id: id
+        });
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'ajout de l'appareil AC:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Appairage AC - Étape 1: Envoyer la commande d'appairage
+app.post('/api/devices/ac/pair', (req, res) => {
+    try {
+        const { deviceId } = req.body;
+
+        if (!deviceId || !devices[deviceId]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        const device = devices[deviceId];
+        if (device.type !== 'AC') {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil n\'est pas de type AC'
+            });
+        }
+
+        if (!lighting2Handler) {
+            return res.status(500).json({
+                status: 'error',
+                error: 'RFXCOM non initialisé'
+            });
+        }
+
+        // Envoyer ON pour l'appairage
+        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
+        lighting2Handler.switchOn(deviceIdFormatted, (error) => {
+            if (error) {
+                log('error', `❌ Erreur lors de l'appairage:`, error);
+                return res.status(500).json({
+                    status: 'error',
+                    error: error.message
+                });
+            }
+
+            log('info', `✅ Commande d'appairage envoyée pour ${device.name}`);
+
+            // Marquer comme appairé (l'utilisateur confirmera via /api/devices/ac/confirm-pair)
+            devices[deviceId].pairingSent = true;
+            saveDevices();
+
+            res.json({
+                status: 'success',
+                message: 'Commande d\'appairage envoyée. Vérifiez si l\'appareil a répondu, puis utilisez /api/devices/ac/confirm-pair pour confirmer.'
+            });
+        });
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'appairage:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Appairage AC - Étape 2: Confirmer l'appairage
+app.post('/api/devices/ac/confirm-pair', (req, res) => {
+    try {
+        const { deviceId, confirmed } = req.body;
+
+        if (!deviceId || !devices[deviceId]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        const device = devices[deviceId];
+        if (device.type !== 'AC') {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil n\'est pas de type AC'
+            });
+        }
+
+        if (confirmed) {
+            devices[deviceId].paired = true;
+            devices[deviceId].pairedAt = new Date().toISOString();
+            saveDevices();
+
+            // Publier la découverte Home Assistant
+            if (mqttHelper && mqttHelper.connected) {
+                mqttHelper.publishSwitchDiscovery({ ...devices[deviceId], id: deviceId });
+            }
+
+            log('info', `✅ Appairage confirmé pour ${device.name}`);
+            res.json({
+                status: 'success',
+                message: 'Appairage confirmé avec succès',
+                device: devices[deviceId]
+            });
+        } else {
+            log('info', `⚠️ Appairage non confirmé pour ${device.name}`);
+            res.json({
+                status: 'success',
+                message: 'Appairage non confirmé',
+                device: devices[deviceId]
+            });
+        }
+    } catch (error) {
+        log('error', `❌ Erreur lors de la confirmation de l'appairage:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Tester un appareil AC
+app.post('/api/devices/ac/test', (req, res) => {
+    try {
+        const { deviceId, command } = req.body;
+
+        if (!deviceId || !devices[deviceId]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        const device = devices[deviceId];
+        if (device.type !== 'AC') {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil n\'est pas de type AC'
+            });
+        }
+
+        if (!command || (command !== 'on' && command !== 'off')) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Commande invalide (utilisez "on" ou "off")'
+            });
+        }
+
+        sendAcCommand(deviceId, command, res);
+    } catch (error) {
+        log('error', `❌ Erreur lors du test:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Commandes AC - ON
+app.post('/api/devices/ac/:id/on', (req, res) => {
+    try {
+        sendAcCommand(req.params.id, 'on', res);
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'envoi de la commande ON:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Commandes AC - OFF
+app.post('/api/devices/ac/:id/off', (req, res) => {
+    try {
+        sendAcCommand(req.params.id, 'off', res);
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'envoi de la commande OFF:`, error);
         res.status(500).json({
             status: 'error',
             error: error.message

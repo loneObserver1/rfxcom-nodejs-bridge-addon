@@ -173,38 +173,63 @@
             <div id="alerts"></div>
 
             <div class="section">
-                <h2>➕ Ajouter un appareil ARC</h2>
+                <h2>➕ Ajouter un appareil</h2>
                 <form id="addDeviceForm">
                     <div class="form-group">
-                        <label for="deviceName">Nom de l'appareil *</label>
-                        <input type="text" id="deviceName" name="name" required placeholder="Ex: Volet Salon">
-                    </div>
-                    <div class="form-group">
-                        <label for="houseCode">House Code (optionnel - laissé vide pour auto)</label>
-                        <select id="houseCode" name="houseCode">
-                            <option value="">Auto</option>
-                            <option value="A">A</option>
-                            <option value="B">B</option>
-                            <option value="C">C</option>
-                            <option value="D">D</option>
-                            <option value="E">E</option>
-                            <option value="F">F</option>
-                            <option value="G">G</option>
-                            <option value="H">H</option>
-                            <option value="I">I</option>
-                            <option value="J">J</option>
-                            <option value="K">K</option>
-                            <option value="L">L</option>
-                            <option value="M">M</option>
-                            <option value="N">N</option>
-                            <option value="O">O</option>
-                            <option value="P">P</option>
+                        <label for="deviceType">Type d'appareil *</label>
+                        <select id="deviceType" name="type" required>
+                            <option value="">Sélectionnez un type</option>
+                            <option value="ARC">ARC (Volet)</option>
+                            <option value="AC">AC (Prise DIO Chacon)</option>
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="unitCode">Unit Code (optionnel - laissé vide pour auto)</label>
-                        <input type="number" id="unitCode" name="unitCode" min="1" max="16" placeholder="1-16">
+                        <label for="deviceName">Nom de l'appareil *</label>
+                        <input type="text" id="deviceName" name="name" required placeholder="Ex: Volet Salon / Prise Salon">
                     </div>
+                    
+                    <!-- Champs ARC (House Code + Unit Code) -->
+                    <div id="arcFields" class="device-type-fields" style="display: none;">
+                        <div class="form-group">
+                            <label for="houseCode">House Code (optionnel - laissé vide pour auto)</label>
+                            <select id="houseCode" name="houseCode">
+                                <option value="">Auto</option>
+                                <option value="A">A</option>
+                                <option value="B">B</option>
+                                <option value="C">C</option>
+                                <option value="D">D</option>
+                                <option value="E">E</option>
+                                <option value="F">F</option>
+                                <option value="G">G</option>
+                                <option value="H">H</option>
+                                <option value="I">I</option>
+                                <option value="J">J</option>
+                                <option value="K">K</option>
+                                <option value="L">L</option>
+                                <option value="M">M</option>
+                                <option value="N">N</option>
+                                <option value="O">O</option>
+                                <option value="P">P</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="unitCode">Unit Code (optionnel - laissé vide pour auto)</label>
+                            <input type="number" id="unitCode" name="unitCode" min="1" max="16" placeholder="1-16">
+                        </div>
+                    </div>
+                    
+                    <!-- Champs AC (Device ID + Unit Code) -->
+                    <div id="acFields" class="device-type-fields" style="display: none;">
+                        <div class="form-group">
+                            <label for="acDeviceId">Device ID * (ex: 02382C82)</label>
+                            <input type="text" id="acDeviceId" name="deviceId" placeholder="02382C82" pattern="[0-9A-Fa-f]{8}" title="8 caractères hexadécimaux">
+                        </div>
+                        <div class="form-group">
+                            <label for="acUnitCode">Unit Code (optionnel, défaut: 0)</label>
+                            <input type="number" id="acUnitCode" name="unitCode" min="0" max="15" placeholder="0-15" value="0">
+                        </div>
+                    </div>
+                    
                     <button type="submit">Créer l'appareil</button>
                 </form>
             </div>
@@ -258,15 +283,23 @@
                                 <span class="status ${statusClass}">${statusText}</span>
                             </p>
                             ${device.type === 'ARC' ? `<p>House Code: ${device.houseCode} | Unit Code: ${device.unitCode}</p>` : ''}
+                            ${device.type === 'AC' ? `<p>Device ID: ${device.deviceId} | Unit Code: ${device.unitCode}</p>` : ''}
                         </div>
                         <div class="device-actions">
                             ${device.type === 'ARC' && !device.paired ? `
                                 <button class="btn-small btn-success" onclick="pairDevice('${deviceId}')">Appairer</button>
                             ` : ''}
+                            ${device.type === 'AC' && !device.paired ? `
+                                <button class="btn-small btn-success" onclick="pairAcDevice('${deviceId}')">Appairer</button>
+                            ` : ''}
                             ${device.type === 'ARC' ? `
                                 <button class="btn-small btn-success" onclick="sendArcCommand('${deviceId}', 'on')">ON</button>
                                 <button class="btn-small" onclick="sendArcCommand('${deviceId}', 'off')">OFF</button>
                                 <button class="btn-small" onclick="sendArcCommand('${deviceId}', 'stop')">STOP</button>
+                            ` : ''}
+                            ${device.type === 'AC' ? `
+                                <button class="btn-small btn-success" onclick="sendAcCommand('${deviceId}', 'on')">ON</button>
+                                <button class="btn-small" onclick="sendAcCommand('${deviceId}', 'off')">OFF</button>
                             ` : ''}
                             <button class="btn-small btn-danger" onclick="deleteDevice('${deviceId}')">Supprimer</button>
                         </div>
@@ -275,18 +308,73 @@
             }).join('');
         }
 
-        // Ajouter un appareil
+        // Gérer le changement dynamique du formulaire selon le type
+        document.getElementById('deviceType').addEventListener('change', (e) => {
+            const deviceType = e.target.value;
+            const arcFields = document.getElementById('arcFields');
+            const acFields = document.getElementById('acFields');
+            const acDeviceId = document.getElementById('acDeviceId');
+            
+            // Masquer tous les champs
+            arcFields.style.display = 'none';
+            acFields.style.display = 'none';
+            
+            // Réinitialiser les champs requis
+            if (acDeviceId) {
+                acDeviceId.removeAttribute('required');
+            }
+            
+            // Afficher les champs selon le type
+            if (deviceType === 'ARC') {
+                arcFields.style.display = 'block';
+            } else if (deviceType === 'AC') {
+                acFields.style.display = 'block';
+                if (acDeviceId) {
+                    acDeviceId.setAttribute('required', 'required');
+                }
+            }
+        });
+
+        // Ajouter un appareil (ARC ou AC)
         document.getElementById('addDeviceForm').addEventListener('submit', async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
-            const data = {
-                name: formData.get('name'),
-                houseCode: formData.get('houseCode') || undefined,
-                unitCode: formData.get('unitCode') ? parseInt(formData.get('unitCode')) : undefined
-            };
+            const deviceType = formData.get('type');
+            
+            if (!deviceType) {
+                showAlert('❌ Veuillez sélectionner un type d\'appareil', 'error');
+                return;
+            }
+
+            let endpoint;
+            let data;
+
+            if (deviceType === 'ARC') {
+                endpoint = '/api/devices/arc';
+                data = {
+                    name: formData.get('name'),
+                    houseCode: formData.get('houseCode') || undefined,
+                    unitCode: formData.get('unitCode') ? parseInt(formData.get('unitCode')) : undefined
+                };
+            } else if (deviceType === 'AC') {
+                endpoint = '/api/devices/ac';
+                const deviceId = formData.get('deviceId');
+                if (!deviceId) {
+                    showAlert('❌ Le Device ID est requis pour les appareils AC', 'error');
+                    return;
+                }
+                data = {
+                    name: formData.get('name'),
+                    deviceId: deviceId,
+                    unitCode: formData.get('unitCode') ? parseInt(formData.get('unitCode')) : 0
+                };
+            } else {
+                showAlert('❌ Type d\'appareil non reconnu', 'error');
+                return;
+            }
 
             try {
-                const response = await fetch(API_BASE + '/api/devices/arc', {
+                const response = await fetch(API_BASE + endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
@@ -297,6 +385,12 @@
                 if (result.status === 'success') {
                     showAlert(`✅ ${result.message}`, 'success');
                     e.target.reset();
+                    // Réinitialiser l'affichage des champs
+                    document.getElementById('arcFields').style.display = 'none';
+                    document.getElementById('acFields').style.display = 'none';
+                    if (document.getElementById('acDeviceId')) {
+                        document.getElementById('acDeviceId').removeAttribute('required');
+                    }
                     loadDevices();
                 } else {
                     showAlert('❌ ' + result.error, 'error');
@@ -332,6 +426,61 @@
                         showAlert(confirmResult.message || '✅ Appairage confirmé', 'success');
                         loadDevices();
                     }
+                } else {
+                    showAlert('❌ ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur: ' + error.message, 'error');
+            }
+        }
+
+
+        // Appairer un appareil AC
+        async function pairAcDevice(deviceId) {
+            if (!confirm('Mettez l\'appareil en mode appairage, puis cliquez sur OK')) {
+                return;
+            }
+
+            try {
+                const response = await fetch(API_BASE + '/api/devices/ac/pair', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    if (confirm('L\'appareil a-t-il bien répondu ?')) {
+                        const confirmResponse = await fetch(API_BASE + '/api/devices/ac/confirm-pair', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ deviceId, confirmed: true })
+                        });
+                        const confirmResult = await confirmResponse.json();
+                        showAlert(confirmResult.message || '✅ Appairage confirmé', 'success');
+                        loadDevices();
+                    } else {
+                        showAlert('Appairage non confirmé', 'info');
+                    }
+                } else {
+                    showAlert('❌ ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur: ' + error.message, 'error');
+            }
+        }
+
+        // Envoyer une commande AC
+        async function sendAcCommand(deviceId, command) {
+            try {
+                const encodedDeviceId = encodeURIComponent(deviceId);
+                const endpoint = `${API_BASE}/api/devices/ac/${encodedDeviceId}/${command}`;
+                const response = await fetch(endpoint, { method: 'POST' });
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    showAlert(`✅ Commande ${command.toUpperCase()} envoyée`, 'success');
                 } else {
                     showAlert('❌ ' + result.error, 'error');
                 }
@@ -401,6 +550,7 @@
     </script>
 </body>
 </html>
+
 
 
 

@@ -85,7 +85,7 @@ class MQTTHelper {
             this.connectionAttempts = 0; // Réinitialiser le compteur en cas de succès
             this.shouldReconnect = true; // Réactiver la reconnexion
             this.log('info', '✅ Connecté au broker MQTT Home Assistant');
-            this.log('info', '📡 Les entités Home Assistant seront créées automatiquement pour les appareils ARC');
+            this.log('info', '📡 Les entités Home Assistant seront créées automatiquement pour les appareils ARC et AC');
             
             // Publier le statut en ligne (vérifier que le client existe)
             if (this.client) {
@@ -241,6 +241,73 @@ class MQTTHelper {
         });
     }
     
+    // Publier la configuration de découverte Home Assistant pour un switch AC
+    publishSwitchDiscovery(device) {
+        if (!this.connected || !this.client) {
+            this.log('warn', '⚠️ MQTT non connecté, impossible de publier la découverte');
+            return;
+        }
+
+        const deviceId = device.id || `ac_${device.deviceId}_${device.unitCode}`;
+        const uniqueId = `rfxcom_ac_${device.deviceId}_${device.unitCode}`;
+        const topic = `${this.baseTopic}/switch/rfxcom/${deviceId}/config`;
+        
+        const config = {
+            name: device.name,
+            unique_id: uniqueId,
+            state_topic: `rfxcom/switch/${deviceId}/state`,
+            command_topic: `rfxcom/switch/${deviceId}/set`,
+            payload_on: 'ON',
+            payload_off: 'OFF',
+            state_on: 'ON',
+            state_off: 'OFF',
+            device_class: 'outlet', // Identifie comme une prise (outlet) dans Home Assistant
+            device: {
+                identifiers: [`rfxcom_${deviceId}`],
+                name: device.name,
+                model: 'RFXCOM AC',
+                manufacturer: 'RFXCOM'
+            }
+        };
+
+        try {
+            this.client.publish(topic, JSON.stringify(config), { qos: 1, retain: true }, (error) => {
+                if (error) {
+                    this.log('error', `❌ Erreur lors de la publication de la découverte: ${error.message}`);
+                } else {
+                    this.log('info', `✅ Entité Home Assistant créée pour ${device.name}`);
+                }
+            });
+
+            // S'abonner aux commandes
+            this.client.subscribe(`rfxcom/switch/${deviceId}/set`, (error) => {
+                if (error) {
+                    this.log('error', `❌ Erreur lors de l'abonnement aux commandes: ${error.message}`);
+                }
+            });
+        } catch (error) {
+            this.log('error', `❌ Erreur lors de la publication de la découverte AC: ${error.message}`);
+        }
+    }
+
+    // Publier l'état d'un switch AC
+    publishSwitchState(deviceId, state) {
+        if (!this.connected || !this.client) {
+            return;
+        }
+
+        const topic = `rfxcom/switch/${deviceId}/state`;
+        try {
+            this.client.publish(topic, state, { qos: 1, retain: true }, (error) => {
+                if (error) {
+                    this.log('error', `❌ Erreur lors de la publication de l'état: ${error.message}`);
+                }
+            });
+        } catch (error) {
+            this.log('error', `❌ Erreur lors de la publication de l'état AC: ${error.message}`);
+        }
+    }
+
     // Définir le callback pour les messages MQTT
     setMessageHandler(handler) {
         if (this.client) {
@@ -331,10 +398,19 @@ class MQTTHelper {
     removeDiscovery(deviceId) {
         if (!this.connected || !this.client) return;
         
-        const topic = `${this.baseTopic}/cover/rfxcom/${deviceId}/config`;
-        this.client.publish(topic, '', { qos: 1, retain: true }, (error) => {
+        // Supprimer pour les covers (ARC)
+        const coverTopic = `${this.baseTopic}/cover/rfxcom/${deviceId}/config`;
+        this.client.publish(coverTopic, '', { qos: 1, retain: true }, (error) => {
             if (!error) {
-                this.log('info', `🗑️ Entité Home Assistant supprimée pour ${deviceId}`);
+                this.log('info', `🗑️ Entité cover Home Assistant supprimée pour ${deviceId}`);
+            }
+        });
+        
+        // Supprimer pour les switches (AC)
+        const switchTopic = `${this.baseTopic}/switch/rfxcom/${deviceId}/config`;
+        this.client.publish(switchTopic, '', { qos: 1, retain: true }, (error) => {
+            if (!error) {
+                this.log('info', `🗑️ Entité switch Home Assistant supprimée pour ${deviceId}`);
             }
         });
     }
