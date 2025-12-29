@@ -14,47 +14,11 @@ MQTT_PASSWORD=$(bashio::config 'mqtt_password' '')
 
 # Si les paramètres MQTT ne sont pas fournis, essayer de les récupérer depuis Home Assistant
 if [ -z "$MQTT_HOST" ] || [ -z "$MQTT_USER" ]; then
-    bashio::log.info "Récupération automatique des paramètres MQTT depuis l'add-on Mosquitto broker..."
+    bashio::log.info "Récupération automatique des paramètres MQTT depuis Home Assistant..."
     
-    # Essayer d'abord de récupérer depuis l'add-on Mosquitto broker
-    # Le slug peut être "core_mosquitto" ou "mosquitto" selon l'installation
-    MOSQUITTO_SLUG=""
-    if bashio::addon.installed "core_mosquitto"; then
-        MOSQUITTO_SLUG="core_mosquitto"
-    elif bashio::addon.installed "mosquitto"; then
-        MOSQUITTO_SLUG="mosquitto"
-    fi
-    
-    if [ -n "$MOSQUITTO_SLUG" ]; then
-        bashio::log.info "Add-on Mosquitto broker trouvé: ${MOSQUITTO_SLUG}"
-        
-        # Récupérer la configuration de l'add-on Mosquitto
-        # Le host est généralement "core-mosquitto" (nom du service Docker)
-        MQTT_HOST="core-mosquitto"
-        
-        # Essayer de récupérer le port depuis la configuration de l'add-on
-        MOSQUITTO_PORT=$(bashio::addon.options "${MOSQUITTO_SLUG}" "port" 2>/dev/null || echo "")
-        if [ -n "$MOSQUITTO_PORT" ] && [ "$MOSQUITTO_PORT" != "null" ]; then
-            MQTT_PORT="$MOSQUITTO_PORT"
-        fi
-        
-        # Essayer de récupérer les identifiants depuis la configuration
-        MOSQUITTO_USER=$(bashio::addon.options "${MOSQUITTO_SLUG}" "logins[0].username" 2>/dev/null || echo "")
-        MOSQUITTO_PASS=$(bashio::addon.options "${MOSQUITTO_SLUG}" "logins[0].password" 2>/dev/null || echo "")
-        
-        if [ -n "$MOSQUITTO_USER" ] && [ "$MOSQUITTO_USER" != "null" ]; then
-            MQTT_USER="$MOSQUITTO_USER"
-        fi
-        if [ -n "$MOSQUITTO_PASS" ] && [ "$MOSQUITTO_PASS" != "null" ]; then
-            MQTT_PASSWORD="$MOSQUITTO_PASS"
-        fi
-        
-        bashio::log.info "✅ Paramètres MQTT récupérés depuis l'add-on Mosquitto broker"
-        bashio::log.info "   Host: ${MQTT_HOST}"
-        bashio::log.info "   Port: ${MQTT_PORT}"
-        bashio::log.info "   User: ${MQTT_USER:-'(vide)'}"
-        bashio::log.info "   Password: ${MQTT_PASSWORD:+'(présent)'}"
-    elif bashio::services.available mqtt; then
+    # Essayer de récupérer depuis le service MQTT de Home Assistant
+    # (qui expose les informations du broker MQTT, y compris Mosquitto broker)
+    if bashio::services.available mqtt; then
         # Fallback: essayer de récupérer depuis le service MQTT de Home Assistant
         bashio::log.info "Récupération depuis le service MQTT de Home Assistant..."
         MQTT_HOST=$(bashio::services mqtt host)

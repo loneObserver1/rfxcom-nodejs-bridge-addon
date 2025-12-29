@@ -225,6 +225,75 @@ class MQTTHelper {
         this.client.publish(topic, state, { qos: 1, retain: true });
     }
 
+    // Publier la configuration de découverte Home Assistant pour une sonde température/humidité
+    publishTempHumDiscovery(device) {
+        if (!this.connected || !this.client) {
+            this.log('warn', '⚠️ MQTT non connecté, impossible de publier la découverte');
+            return;
+        }
+
+        const deviceId = device.id || `temp_hum_${device.sensorId}`;
+        const uniqueIdTemp = `rfxcom_temp_${device.sensorId}`;
+        const uniqueIdHum = `rfxcom_hum_${device.sensorId}`;
+        
+        // Configuration pour le capteur de température
+        const tempConfig = {
+            name: `${device.name} - Température`,
+            unique_id: uniqueIdTemp,
+            state_topic: `rfxcom/sensor/${deviceId}/temperature/state`,
+            unit_of_measurement: '°C',
+            device_class: 'temperature',
+            device: {
+                identifiers: [`rfxcom_${deviceId}`],
+                name: device.name,
+                model: 'RFXCOM Temp/Hum',
+                manufacturer: 'RFXCOM'
+            }
+        };
+
+        // Configuration pour le capteur d'humidité
+        const humConfig = {
+            name: `${device.name} - Humidité`,
+            unique_id: uniqueIdHum,
+            state_topic: `rfxcom/sensor/${deviceId}/humidity/state`,
+            unit_of_measurement: '%',
+            device_class: 'humidity',
+            device: {
+                identifiers: [`rfxcom_${deviceId}`],
+                name: device.name,
+                model: 'RFXCOM Temp/Hum',
+                manufacturer: 'RFXCOM'
+            }
+        };
+
+        const tempTopic = `${this.baseTopic}/sensor/rfxcom/${deviceId}_temperature/config`;
+        const humTopic = `${this.baseTopic}/sensor/rfxcom/${deviceId}_humidity/config`;
+
+        this.client.publish(tempTopic, JSON.stringify(tempConfig), { qos: 1, retain: true }, (error) => {
+            if (error) {
+                this.log('error', `❌ Erreur lors de la publication de la découverte température: ${error.message}`);
+            } else {
+                this.log('info', `✅ Entité température créée pour ${device.name}`);
+            }
+        });
+
+        this.client.publish(humTopic, JSON.stringify(humConfig), { qos: 1, retain: true }, (error) => {
+            if (error) {
+                this.log('error', `❌ Erreur lors de la publication de la découverte humidité: ${error.message}`);
+            } else {
+                this.log('info', `✅ Entité humidité créée pour ${device.name}`);
+            }
+        });
+    }
+
+    // Publier l'état d'un capteur
+    publishSensorState(deviceId, value, unit) {
+        if (!this.connected || !this.client) return;
+        
+        const topic = `rfxcom/sensor/${deviceId}/state`;
+        this.client.publish(topic, value, { qos: 1, retain: true });
+    }
+
     // Supprimer la configuration de découverte
     removeDiscovery(deviceId) {
         if (!this.connected || !this.client) return;

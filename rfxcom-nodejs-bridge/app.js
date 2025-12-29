@@ -275,28 +275,48 @@ try {
             if (AUTO_DISCOVERY) {
                 log('info', `👂 Écoute des messages RFXCOM pour détection automatique...`);
                 rfxtrx.on('receive', (evt, msg) => {
-                    log('debug', `📨 Message reçu:`, JSON.stringify(msg));
-                    handleReceivedMessage(msg);
+                    if (msg) {
+                        log('debug', `📨 Message reçu:`, JSON.stringify(msg));
+                        handleReceivedMessage(msg);
+                    } else {
+                        log('warn', `⚠️ Message RFXCOM reçu mais vide ou invalide`);
+                    }
                 });
             }
             
             log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
             
-            // Configurer la publication des entités après connexion MQTT
-            // (l'initialisation MQTT se fera après le démarrage du serveur HTTP)
-            if (mqttHelper) {
-                mqttHelper.onConnect = () => {
-                    setTimeout(() => {
-                        log('info', '📡 Publication des entités Home Assistant existantes...');
-                        Object.keys(devices).forEach(deviceId => {
-                            const device = devices[deviceId];
-                            if (device.type === 'ARC') {
-                                mqttHelper.publishCoverDiscovery({ ...device, id: deviceId });
-                            }
-                        });
-                    }, 1000);
-                };
-            }
+            // Initialiser MQTT après l'initialisation complète de RFXCOM
+            // Utiliser un petit délai pour s'assurer que tout est prêt
+            setTimeout(() => {
+                initializeMQTT();
+                
+                // Configurer la publication des entités après connexion MQTT
+                if (mqttHelper) {
+                    mqttHelper.onConnect = () => {
+                        // Test simple de connexion : publier le statut
+                        log('info', '✅ Test de connexion MQTT réussi');
+                        
+                        // Publier les entités existantes s'il y en a
+                        const deviceCount = Object.keys(devices).length;
+                        if (deviceCount > 0) {
+                            setTimeout(() => {
+                                log('info', `📡 Publication des ${deviceCount} entité(s) Home Assistant existante(s)...`);
+                                Object.keys(devices).forEach(deviceId => {
+                                    const device = devices[deviceId];
+                                    if (device.type === 'ARC') {
+                                        mqttHelper.publishCoverDiscovery({ ...device, id: deviceId });
+                                    } else if (device.type === 'TEMP_HUM') {
+                                        mqttHelper.publishTempHumDiscovery({ ...device, id: deviceId });
+                                    }
+                                });
+                            }, 1000);
+                        } else {
+                            log('info', '📡 Aucun appareil enregistré, prêt à en ajouter');
+                        }
+                    };
+                }
+            }, 500);
         }
     });
 
@@ -341,6 +361,10 @@ try {
 // Gérer les messages reçus
 function handleReceivedMessage(msg) {
     if (!AUTO_DISCOVERY) return;
+    if (!msg || typeof msg !== 'object') {
+        log('warn', `⚠️ Message invalide reçu:`, msg);
+        return;
+    }
     
     // Détecter les nouveaux appareils ARC
     if (msg.type === 'lighting1' && msg.subtype === 'ARC') {
@@ -356,6 +380,52 @@ function handleReceivedMessage(msg) {
                 discoveredAt: new Date().toISOString()
             };
             saveDevices();
+            
+            // Publier la découverte Home Assistant
+            if (mqttHelper && mqttHelper.connected) {
+                mqttHelper.publishCoverDiscovery({ ...devices[id], id: id });
+            }
+        }
+    }
+    
+    // Détecter les sondes de température/humidité
+    // Le package rfxcom peut utiliser différents noms de type selon la version
+    if (msg.type === 'tempHumidity' || msg.type === 'TEMP_HUM' || msg.packetType === 'TEMP_HUM') {
+        // Extraire l'ID de la sonde depuis différents champs possibles
+        const sensorId = msg.id || msg.sensorId || msg.ID || `temp_${msg.channel || msg.channelNumber || 0}`;
+        const id = `TEMP_HUM_${sensorId}`;
+        
+        if (!devices[id]) {
+            log('info', `🆕 Nouvelle sonde température/humidité détectée: ID ${sensorId}, Canal ${msg.channel || msg.channelNumber || 'N/A'}`);
+            devices[id] = {
+                type: 'TEMP_HUM',
+                name: `Sonde Temp/Hum ${sensorId}`,
+                sensorId: sensorId,
+                channel: msg.channel || msg.channelNumber,
+                subtype: msg.subtype,
+                discovered: true,
+                discoveredAt: new Date().toISOString()
+            };
+            saveDevices();
+            
+            // Publier la découverte Home Assistant
+            if (mqttHelper && mqttHelper.connected) {
+                mqttHelper.publishTempHumDiscovery({ ...devices[id], id: id });
+            }
+        }
+        
+        // Publier les valeurs actuelles
+        if (mqttHelper && mqttHelper.connected && devices[id]) {
+            // Le package peut utiliser différents noms pour la température
+            const temperature = msg.temperature || msg.Temperature;
+            const humidity = msg.humidity || msg.Humidity;
+            
+            if (temperature !== undefined && temperature !== null) {
+                mqttHelper.publishSensorState(`${id}_temperature`, temperature.toString(), '°C');
+            }
+            if (humidity !== undefined && humidity !== null) {
+                mqttHelper.publishSensorState(`${id}_humidity`, humidity.toString(), '%');
+            }
         }
     }
 }
@@ -753,10 +823,4 @@ server.listen(API_PORT, '0.0.0.0', () => {
     log('info', `   POST /api/devices/arc/confirm-pair - Confirmer l'appairage ARC`);
     log('info', `   POST /api/devices/arc/test - Tester un appareil ARC (on/off/up/down/stop)`);
     log('info', `   DELETE /api/devices/:id - Supprimer un appareil`);
-    
-    // Initialiser MQTT après le démarrage du serveur HTTP
-    // (seulement si RFXCOM est déjà initialisé)
-    if (rfxtrx && lighting1Handler) {
-        initializeMQTT();
-    }
 });
