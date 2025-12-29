@@ -1,7 +1,6 @@
 const rfxcom = require('rfxcom');
 const fs = require('fs');
-const http = require('http');
-const url = require('url');
+const express = require('express');
 const MQTTHelper = require('./mqtt_helper');
 
 // Récupérer les variables d'environnement
@@ -814,407 +813,371 @@ function handleReceivedMessage(msg) {
     }
 }
 
-// API HTTP
-const server = http.createServer(async (req, res) => {
-    // CORS headers
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
-    
+// API Express
+const app = express();
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// CORS
+app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
     if (req.method === 'OPTIONS') {
-        res.writeHead(200);
-        res.end();
-        return;
+        res.sendStatus(200);
+    } else {
+        next();
     }
-
-    const parsedUrl = url.parse(req.url, true);
-    const path = parsedUrl.pathname;
-    const method = req.method;
-
-    // Log des requêtes API (sauf pour l'interface web)
-    if (path.startsWith('/api/')) {
-        log('info', `📥 ${method} ${path}`);
-    }
-
-    // Health check
-    if (path === '/health' && method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            status: 'ok',
-            initialized: rfxtrx !== null,
-            port: SERIAL_PORT,
-            auto_discovery: AUTO_DISCOVERY
-        }));
-        return;
-    }
-
-    // Liste des appareils
-    if (path === '/api/devices' && method === 'GET') {
-        res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-            status: 'success',
-            devices: devices
-        }));
-        return;
-    }
-
-    // Obtenir un appareil
-    if (path.startsWith('/api/devices/') && method === 'GET') {
-        const deviceId = path.split('/')[3];
-        if (devices[deviceId]) {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                status: 'success',
-                device: devices[deviceId]
-            }));
-        } else {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                status: 'error',
-                error: 'Appareil non trouvé'
-            }));
-        }
-        return;
-    }
-
-    // Interface web
-    if (path === '/' || path === '/index.html') {
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(getWebInterface());
-        return;
-    }
-
-    // Ajouter un appareil ARC
-    if (path === '/api/devices/arc' && method === 'POST') {
-        let body = '';
-        req.on('data', (chunk) => { body += chunk.toString(); });
-        req.on('end', () => {
-            try {
-                log('info', `📥 Requête reçue pour ajouter un appareil ARC`);
-                const data = JSON.parse(body);
-                const { name, houseCode, unitCode } = data;
-                log('info', `📝 Données reçues: name="${name}", houseCode="${houseCode || 'auto'}", unitCode="${unitCode || 'auto'}"`);
-                
-                if (!name) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'Le nom est requis'
-                    }));
-                    return;
-                }
-
-                // Trouver un code libre si non fourni
-                let finalHouseCode = houseCode;
-                let finalUnitCode = unitCode;
-                
-                if (!finalHouseCode || !finalUnitCode) {
-                    const freeCode = findFreeArcCode();
-                    if (!freeCode) {
-                        res.writeHead(400, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({
-                            status: 'error',
-                            error: 'Aucun code libre disponible'
-                        }));
-                        return;
-                    }
-                    finalHouseCode = freeCode.houseCode;
-                    finalUnitCode = freeCode.unitCode;
-                }
-
-                const id = `ARC_${finalHouseCode}_${finalUnitCode}`;
-                
-                if (devices[id]) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'Cet appareil existe déjà'
-                    }));
-                    return;
-                }
-
-                devices[id] = {
-                    type: 'ARC',
-                    name: name,
-                    houseCode: finalHouseCode,
-                    unitCode: finalUnitCode,
-                    discovered: false,
-                    paired: false,
-                    createdAt: new Date().toISOString()
-                };
-                
-                saveDevices();
-                log('info', `✅ Appareil ARC créé: ${name} (${id}) - House code: ${finalHouseCode}, Unit code: ${finalUnitCode}`);
-                
-                // Publier la découverte Home Assistant
-                if (mqttHelper && mqttHelper.connected) {
-                    mqttHelper.publishCoverDiscovery({ ...devices[id], id: id });
-                    log('info', `📡 Entité Home Assistant créée pour ${name}`);
-                } else {
-                    log('warn', `⚠️ MQTT non connecté, l'entité Home Assistant sera créée lors de la prochaine connexion`);
-                }
-                
-                res.writeHead(200, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    status: 'success',
-                    device: devices[id],
-                    message: `Appareil ARC créé avec house code ${finalHouseCode} et unit code ${finalUnitCode}. Mettez l'appareil en mode appairage puis utilisez /api/devices/arc/pair`
-                }));
-            } catch (error) {
-                log('error', `❌ Erreur lors de l'ajout d'un appareil ARC:`, error);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    status: 'error',
-                    error: error.message
-                }));
-            }
-        });
-        return;
-    }
-
-    // Appairage ARC - Étape 1: Envoyer la commande d'appairage
-    if (path === '/api/devices/arc/pair' && method === 'POST') {
-        let body = '';
-        req.on('data', (chunk) => { body += chunk.toString(); });
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const { deviceId } = data;
-                
-                if (!deviceId || !devices[deviceId]) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'Appareil non trouvé'
-                    }));
-                    return;
-                }
-
-                const device = devices[deviceId];
-                if (device.type !== 'ARC') {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'Cet appareil n\'est pas de type ARC'
-                    }));
-                    return;
-                }
-
-                if (!lighting1Handler) {
-                    res.writeHead(500, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'RFXCOM non initialisé'
-                    }));
-                    return;
-                }
-
-                // Envoyer ON pour l'appairage
-                lighting1Handler.switchOn(device.houseCode, device.unitCode, (error) => {
-                    if (error) {
-                        log('error', `❌ Erreur lors de l'appairage:`, error);
-                        res.writeHead(500, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({
-                            status: 'error',
-                            error: error.message
-                        }));
-                    } else {
-                        log('info', `✅ Commande d'appairage envoyée pour ${device.name}`);
-                        
-                        // Marquer comme appairé (l'utilisateur confirmera via /api/devices/arc/confirm-pair)
-                        devices[deviceId].pairingSent = true;
-                        saveDevices();
-                        
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({
-                            status: 'success',
-                            message: 'Commande d\'appairage envoyée. Vérifiez si l\'appareil a répondu, puis utilisez /api/devices/arc/confirm-pair pour confirmer.'
-                        }));
-                    }
-                });
-            } catch (error) {
-                log('error', `❌ Erreur lors de l'appairage:`, error);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    status: 'error',
-                    error: error.message
-                }));
-            }
-        });
-        return;
-    }
-
-    // Confirmer l'appairage ARC
-    if (path === '/api/devices/arc/confirm-pair' && method === 'POST') {
-        let body = '';
-        req.on('data', (chunk) => { body += chunk.toString(); });
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const { deviceId, confirmed } = data;
-                
-                if (!deviceId || !devices[deviceId]) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'Appareil non trouvé'
-                    }));
-                    return;
-                }
-
-                const device = devices[deviceId];
-                if (confirmed === true) {
-                    device.paired = true;
-                    device.pairedAt = new Date().toISOString();
-                    saveDevices();
-                    
-                    log('info', `✅ Appairage confirmé pour ${device.name}`);
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'success',
-                        message: 'Appairage confirmé. Utilisez /api/devices/arc/test pour tester ON/OFF.'
-                    }));
-                } else {
-                    res.writeHead(200, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'info',
-                        message: 'Appairage non confirmé. Réessayez le processus d\'appairage.'
-                    }));
-                }
-            } catch (error) {
-                log('error', `❌ Erreur lors de la confirmation:`, error);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    status: 'error',
-                    error: error.message
-                }));
-            }
-        });
-        return;
-    }
-
-    // Tester un appareil ARC (ON/OFF)
-    if (path === '/api/devices/arc/test' && method === 'POST') {
-        let body = '';
-        req.on('data', (chunk) => { body += chunk.toString(); });
-        req.on('end', () => {
-            try {
-                const data = JSON.parse(body);
-                const { deviceId, command } = data;
-                
-                if (!deviceId || !devices[deviceId]) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'Appareil non trouvé'
-                    }));
-                    return;
-                }
-
-                const device = devices[deviceId];
-                if (device.type !== 'ARC') {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'Cet appareil n\'est pas de type ARC'
-                    }));
-                    return;
-                }
-
-                if (!['on', 'off', 'up', 'down', 'stop'].includes(command)) {
-                    res.writeHead(400, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'Commande invalide. Utilisez: on, off, up, down, stop'
-                    }));
-                    return;
-                }
-
-                if (!lighting1Handler) {
-                    res.writeHead(500, { 'Content-Type': 'application/json' });
-                    res.end(JSON.stringify({
-                        status: 'error',
-                        error: 'RFXCOM non initialisé'
-                    }));
-                    return;
-                }
-
-                // Envoyer la commande
-                const callback = (error) => {
-                    if (error) {
-                        log('error', `❌ Erreur lors de l'envoi de la commande:`, error);
-                        res.writeHead(500, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({
-                            status: 'error',
-                            error: error.message
-                        }));
-                    } else {
-                        log('info', `✅ Commande ${command} envoyée à ${device.name}`);
-                        res.writeHead(200, { 'Content-Type': 'application/json' });
-                        res.end(JSON.stringify({
-                            status: 'success',
-                            message: `Commande ${command} envoyée`
-                        }));
-                    }
-                };
-
-                if (command === 'on' || command === 'up') {
-                    lighting1Handler.switchOn(device.houseCode, device.unitCode, callback);
-                } else if (command === 'off' || command === 'down') {
-                    lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
-                } else {
-                    // Pour stop, on peut envoyer OFF
-                    lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
-                }
-            } catch (error) {
-                log('error', `❌ Erreur lors du test:`, error);
-                res.writeHead(500, { 'Content-Type': 'application/json' });
-                res.end(JSON.stringify({
-                    status: 'error',
-                    error: error.message
-                }));
-            }
-        });
-        return;
-    }
-
-    // Supprimer un appareil
-    if (path.startsWith('/api/devices/') && method === 'DELETE') {
-        const deviceId = path.split('/')[3];
-        if (devices[deviceId]) {
-            // Supprimer la découverte Home Assistant
-            if (mqttHelper) {
-                mqttHelper.removeDiscovery(deviceId);
-            }
-            
-            delete devices[deviceId];
-            saveDevices();
-            
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                status: 'success',
-                message: 'Appareil supprimé'
-            }));
-        } else {
-            res.writeHead(404, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({
-                status: 'error',
-                error: 'Appareil non trouvé'
-            }));
-        }
-        return;
-    }
-
-    // 404
-    res.writeHead(404, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({
-        status: 'error',
-        error: 'Endpoint non trouvé'
-    }));
 });
 
-// Démarrer le serveur HTTP
-server.listen(API_PORT, '0.0.0.0', () => {
+// Logging middleware pour les requêtes API
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api/')) {
+        log('info', `📥 ${req.method} ${req.path}`);
+    }
+    next();
+});
+
+// Interface web
+app.get('/', (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(getWebInterface());
+});
+
+app.get('/index.html', (req, res) => {
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(getWebInterface());
+});
+
+// Health check
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'ok',
+        initialized: rfxtrx !== null,
+        port: SERIAL_PORT,
+        auto_discovery: AUTO_DISCOVERY
+    });
+});
+
+// Liste des appareils
+app.get('/api/devices', (req, res) => {
+    res.json({
+        status: 'success',
+        devices: devices
+    });
+});
+
+// Obtenir un appareil
+app.get('/api/devices/:id', (req, res) => {
+    const deviceId = req.params.id;
+    if (devices[deviceId]) {
+        res.json({
+            status: 'success',
+            device: devices[deviceId]
+        });
+    } else {
+        res.status(404).json({
+            status: 'error',
+            error: 'Appareil non trouvé'
+        });
+    }
+});
+
+// Ajouter un appareil ARC
+app.post('/api/devices/arc', (req, res) => {
+    try {
+        log('info', `📥 Requête reçue pour ajouter un appareil ARC`);
+        const { name, houseCode, unitCode } = req.body;
+        log('info', `📝 Données reçues: name="${name}", houseCode="${houseCode || 'auto'}", unitCode="${unitCode || 'auto'}"`);
+        
+        if (!name) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Le nom est requis'
+            });
+        }
+
+        // Trouver un code libre si non fourni
+        let finalHouseCode = houseCode;
+        let finalUnitCode = unitCode;
+        
+        if (!finalHouseCode || !finalUnitCode) {
+            const freeCode = findFreeArcCode();
+            if (!freeCode) {
+                return res.status(400).json({
+                    status: 'error',
+                    error: 'Aucun code libre disponible'
+                });
+            }
+            finalHouseCode = freeCode.houseCode;
+            finalUnitCode = freeCode.unitCode;
+        }
+
+        const id = `ARC_${finalHouseCode}_${finalUnitCode}`;
+        
+        if (devices[id]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil existe déjà'
+            });
+        }
+
+        devices[id] = {
+            type: 'ARC',
+            name: name,
+            houseCode: finalHouseCode,
+            unitCode: finalUnitCode,
+            discovered: false,
+            paired: false,
+            createdAt: new Date().toISOString()
+        };
+        
+        saveDevices();
+        log('info', `✅ Appareil ARC créé: ${name} (${id}) - House code: ${finalHouseCode}, Unit code: ${finalUnitCode}`);
+        
+        // Publier la découverte Home Assistant
+        if (mqttHelper && mqttHelper.connected) {
+            mqttHelper.publishCoverDiscovery({ ...devices[id], id: id });
+            log('info', `📡 Entité Home Assistant créée pour ${name}`);
+        } else {
+            log('warn', `⚠️ MQTT non connecté, l'entité Home Assistant sera créée lors de la prochaine connexion`);
+        }
+        
+        res.json({
+            status: 'success',
+            device: devices[id],
+            message: `Appareil ARC créé avec house code ${finalHouseCode} et unit code ${finalUnitCode}. Mettez l'appareil en mode appairage puis utilisez /api/devices/arc/pair`
+        });
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'ajout d'un appareil ARC:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Appairage ARC - Étape 1: Envoyer la commande d'appairage
+app.post('/api/devices/arc/pair', (req, res) => {
+    try {
+        const { deviceId } = req.body;
+        
+        if (!deviceId || !devices[deviceId]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        const device = devices[deviceId];
+        if (device.type !== 'ARC') {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil n\'est pas de type ARC'
+            });
+        }
+
+        if (!lighting1Handler) {
+            return res.status(500).json({
+                status: 'error',
+                error: 'RFXCOM non initialisé'
+            });
+        }
+
+        // Envoyer ON pour l'appairage
+        lighting1Handler.switchOn(device.houseCode, device.unitCode, (error) => {
+            if (error) {
+                log('error', `❌ Erreur lors de l'appairage:`, error);
+                return res.status(500).json({
+                    status: 'error',
+                    error: error.message
+                });
+            }
+            
+            log('info', `✅ Commande d'appairage envoyée pour ${device.name}`);
+            
+            // Marquer comme appairé (l'utilisateur confirmera via /api/devices/arc/confirm-pair)
+            devices[deviceId].pairingSent = true;
+            saveDevices();
+            
+            res.json({
+                status: 'success',
+                message: 'Commande d\'appairage envoyée. Vérifiez si l\'appareil a répondu, puis utilisez /api/devices/arc/confirm-pair pour confirmer.'
+            });
+        });
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'appairage:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Confirmer l'appairage ARC
+app.post('/api/devices/arc/confirm-pair', (req, res) => {
+    try {
+        const { deviceId, confirmed } = req.body;
+        
+        if (!deviceId || !devices[deviceId]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        const device = devices[deviceId];
+        if (confirmed === true) {
+            device.paired = true;
+            device.pairedAt = new Date().toISOString();
+            saveDevices();
+            
+            log('info', `✅ Appairage confirmé pour ${device.name}`);
+            res.json({
+                status: 'success',
+                message: 'Appairage confirmé. Utilisez /api/devices/arc/test pour tester ON/OFF.'
+            });
+        } else {
+            res.json({
+                status: 'info',
+                message: 'Appairage non confirmé. Réessayez le processus d\'appairage.'
+            });
+        }
+    } catch (error) {
+        log('error', `❌ Erreur lors de la confirmation:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Tester un appareil ARC (ON/OFF)
+app.post('/api/devices/arc/test', (req, res) => {
+    try {
+        const { deviceId, command } = req.body;
+        
+        if (!deviceId || !devices[deviceId]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        const device = devices[deviceId];
+        if (device.type !== 'ARC') {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil n\'est pas de type ARC'
+            });
+        }
+
+        if (!['on', 'off', 'up', 'down', 'stop'].includes(command)) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Commande invalide. Utilisez: on, off, up, down, stop'
+            });
+        }
+
+        if (!lighting1Handler) {
+            return res.status(500).json({
+                status: 'error',
+                error: 'RFXCOM non initialisé'
+            });
+        }
+
+        // Envoyer la commande
+        const callback = (error) => {
+            if (error) {
+                log('error', `❌ Erreur lors de l'envoi de la commande:`, error);
+                return res.status(500).json({
+                    status: 'error',
+                    error: error.message
+                });
+            }
+            
+            log('info', `✅ Commande ${command} envoyée à ${device.name}`);
+            res.json({
+                status: 'success',
+                message: `Commande ${command} envoyée`
+            });
+        };
+
+        if (command === 'on' || command === 'up') {
+            lighting1Handler.switchOn(device.houseCode, device.unitCode, callback);
+        } else if (command === 'off' || command === 'down') {
+            lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
+        } else {
+            // Pour stop, on peut envoyer OFF
+            lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
+        }
+    } catch (error) {
+        log('error', `❌ Erreur lors du test:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Supprimer un appareil
+app.delete('/api/devices/:id', (req, res) => {
+    const deviceId = req.params.id;
+    if (devices[deviceId]) {
+        // Supprimer la découverte Home Assistant
+        if (mqttHelper) {
+            mqttHelper.removeDiscovery(deviceId);
+        }
+        
+        delete devices[deviceId];
+        saveDevices();
+        
+        res.json({
+            status: 'success',
+            message: 'Appareil supprimé'
+        });
+    } else {
+        res.status(404).json({
+            status: 'error',
+            error: 'Appareil non trouvé'
+        });
+    }
+});
+
+// Gestion d'erreurs globale
+app.use((err, req, res, next) => {
+    log('error', `❌ Erreur non gérée dans Express:`, err);
+    res.status(500).json({
+        status: 'error',
+        error: err.message || 'Erreur interne du serveur'
+    });
+});
+
+// 404 handler
+app.use((req, res) => {
+    res.status(404).json({
+        status: 'error',
+        error: 'Endpoint non trouvé'
+    });
+});
+
+// Gestion des erreurs non capturées
+process.on('uncaughtException', (error) => {
+    log('error', `❌ Exception non capturée:`, error);
+    log('error', `   Stack:`, error.stack);
+    // Ne pas arrêter le processus, juste logger
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+    log('error', `❌ Rejection non gérée:`, reason);
+    log('error', `   Promise:`, promise);
+    // Ne pas arrêter le processus, juste logger
+});
+
+// Démarrer le serveur Express
+const server = app.listen(API_PORT, '0.0.0.0', () => {
     log('info', `🌐 Serveur API démarré sur le port ${API_PORT}`);
     log('info', `🌐 Interface web disponible sur http://localhost:${API_PORT}/`);
     log('info', `📡 Endpoints disponibles:`);
@@ -1227,4 +1190,21 @@ server.listen(API_PORT, '0.0.0.0', () => {
     log('info', `   POST /api/devices/arc/confirm-pair - Confirmer l'appairage ARC`);
     log('info', `   POST /api/devices/arc/test - Tester un appareil ARC (on/off/up/down/stop)`);
     log('info', `   DELETE /api/devices/:id - Supprimer un appareil`);
+});
+
+// Gestion de l'arrêt propre
+process.on('SIGTERM', () => {
+    log('info', '🛑 Signal SIGTERM reçu, arrêt du serveur...');
+    server.close(() => {
+        log('info', '✅ Serveur fermé proprement');
+        process.exit(0);
+    });
+});
+
+process.on('SIGINT', () => {
+    log('info', '🛑 Signal SIGINT reçu, arrêt du serveur...');
+    server.close(() => {
+        log('info', '✅ Serveur fermé proprement');
+        process.exit(0);
+    });
 });
