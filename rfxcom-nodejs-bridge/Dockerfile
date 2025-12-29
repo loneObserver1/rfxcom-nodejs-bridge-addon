@@ -7,7 +7,13 @@ RUN \
     nodejs \
     npm
 
+# Copy package.json and install dependencies
+COPY package.json /app/
+WORKDIR /app
+RUN npm install --production
+
 # Copy data for add-on
+COPY app.js /app/
 COPY run.sh /
 RUN chmod a+x /run.sh
 

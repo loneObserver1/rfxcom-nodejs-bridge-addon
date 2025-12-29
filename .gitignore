@@ -1,1 +1,18 @@
+# Fichiers VS Code (garder tasks.json mais ignorer les autres)
+.vscode/settings.json
+.vscode/launch.json
+.vscode/extensions.json
+
+# Fichiers de données
+*.log
+data/
+rfxcom-nodejs-bridge/data/
+
+# Fichiers système
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Fichiers temporaires
 tmp/
