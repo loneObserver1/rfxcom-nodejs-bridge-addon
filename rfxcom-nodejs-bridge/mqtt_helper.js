@@ -10,6 +10,8 @@ class MQTTHelper {
         this.connectionAttempts = 0;
         this.maxConnectionAttempts = 3;
         this.shouldReconnect = true;
+        this.messageHandler = null;
+        this.messageHandlerAttached = false;
         
         // Récupérer les paramètres depuis les variables d'environnement ou les options
         // Par défaut, utiliser core-mosquitto (nom du service Docker de l'add-on Mosquitto broker)
@@ -86,6 +88,9 @@ class MQTTHelper {
             this.shouldReconnect = true; // Réactiver la reconnexion
             this.log('info', '✅ Connecté au broker MQTT Home Assistant');
             this.log('info', '📡 Les entités Home Assistant seront créées automatiquement pour les appareils ARC et AC');
+            
+            // Attacher le handler de messages maintenant que le client est connecté
+            this.attachMessageHandler();
             
             // Publier le statut en ligne (vérifier que le client existe)
             if (this.client) {
@@ -282,9 +287,11 @@ class MQTTHelper {
             });
 
             // S'abonner aux commandes
-            this.client.subscribe(`rfxcom/switch/${deviceId}/set`, (error) => {
+            this.client.subscribe(`rfxcom/switch/${deviceId}/set`, { qos: 0 }, (error) => {
                 if (error) {
                     this.log('error', `❌ Erreur lors de l'abonnement aux commandes: ${error.message}`);
+                } else {
+                    this.log('info', `✅ Abonné au topic: rfxcom/switch/${deviceId}/set`);
                 }
             });
         } catch (error) {
@@ -312,11 +319,34 @@ class MQTTHelper {
 
     // Définir le callback pour les messages MQTT
     setMessageHandler(handler) {
-        if (this.client) {
-            this.client.on('message', (topic, message) => {
-                handler(topic, message.toString());
-            });
+        this.messageHandler = handler;
+        this.log('info', '📡 Handler de messages MQTT enregistré');
+        
+        // Si le client est déjà connecté, attacher le handler immédiatement
+        if (this.client && this.connected) {
+            this.attachMessageHandler();
         }
+    }
+    
+    attachMessageHandler() {
+        if (!this.client || !this.messageHandler) {
+            return;
+        }
+        
+        // S'assurer qu'on n'attache qu'une seule fois
+        if (this.messageHandlerAttached) {
+            return;
+        }
+        
+        this.client.on('message', (topic, message) => {
+            this.log('debug', `📨 Message MQTT brut reçu sur topic: ${topic}, message type: ${typeof message}`);
+            if (this.messageHandler) {
+                this.messageHandler(topic, message.toString());
+            }
+        });
+        
+        this.messageHandlerAttached = true;
+        this.log('info', '✅ Handler de messages MQTT attaché au client');
     }
 
     // Publier l'état d'un volet

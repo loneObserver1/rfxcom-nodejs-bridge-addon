@@ -225,14 +225,19 @@ function initializeMQTT() {
 
         // Gérer les messages MQTT (commandes depuis Home Assistant)
         mqttHelper.setMessageHandler((topic, message) => {
-            log('debug', `📨 Message MQTT reçu: ${topic} -> ${message}`);
+            log('info', `📨 Message MQTT reçu: ${topic} -> ${message.toString()}`);
 
             // Format: rfxcom/cover/{deviceId}/set ou rfxcom/switch/{deviceId}/set
             const parts = topic.split('/');
+            log('debug', `📋 Parties du topic: ${JSON.stringify(parts)}`);
+            
             if (parts.length >= 4 && parts[0] === 'rfxcom') {
                 const deviceType = parts[1]; // 'cover' ou 'switch'
                 const deviceId = parts[2];
                 const commandType = parts[3];
+
+                log('debug', `🔍 Type: ${deviceType}, DeviceId: ${deviceId}, CommandType: ${commandType}`);
+                log('debug', `🔍 Device existe: ${!!devices[deviceId]}, Type device: ${devices[deviceId]?.type}, Handler: ${deviceType === 'cover' ? !!lighting1Handler : !!lighting2Handler}`);
 
                 // Gestion des volets ARC
                 if (deviceType === 'cover' && devices[deviceId] && devices[deviceId].type === 'ARC' && lighting1Handler) {
@@ -241,7 +246,10 @@ function initializeMQTT() {
 
                     if (commandType === 'set') {
                         // Commandes: OPEN, CLOSE, STOP
-                        if (message === 'OPEN' || message === 'open') {
+                        const messageStr = message.toString().trim();
+                        log('info', `🎯 Commande ARC reçue: ${messageStr}`);
+                        
+                        if (messageStr === 'OPEN' || messageStr === 'open') {
                             lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
                                 if (error) {
                                     log('error', `❌ Erreur commande OPEN: ${error.message}`);
@@ -252,7 +260,7 @@ function initializeMQTT() {
                                     }
                                 }
                             });
-                        } else if (message === 'CLOSE' || message === 'close') {
+                        } else if (messageStr === 'CLOSE' || messageStr === 'close') {
                             lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
                                 if (error) {
                                     log('error', `❌ Erreur commande CLOSE: ${error.message}`);
@@ -263,7 +271,7 @@ function initializeMQTT() {
                                     }
                                 }
                             });
-                        } else if (message === 'STOP' || message === 'stop') {
+                        } else if (messageStr === 'STOP' || messageStr === 'stop') {
                             lighting1Handler.stop(device.houseCode, device.unitCode, (error) => {
                                 if (error) {
                                     log('error', `❌ Erreur commande STOP: ${error.message}`);
@@ -271,6 +279,8 @@ function initializeMQTT() {
                                     log('info', `✅ Commande STOP envoyée à ${device.name}`);
                                 }
                             });
+                        } else {
+                            log('warn', `⚠️ Commande ARC inconnue: ${messageStr}`);
                         }
                     }
                 }
@@ -282,7 +292,10 @@ function initializeMQTT() {
 
                     if (commandType === 'set') {
                         // Commandes: ON, OFF
-                        if (message === 'ON' || message === 'on') {
+                        const messageStr = message.toString().trim();
+                        log('info', `🎯 Commande AC reçue: ${messageStr} pour ${device.name} (${deviceIdFormatted})`);
+                        
+                        if (messageStr === 'ON' || messageStr === 'on') {
                             lighting2Handler.switchOn(deviceIdFormatted, (error) => {
                                 if (error) {
                                     log('error', `❌ Erreur commande ON: ${error.message}`);
@@ -293,7 +306,7 @@ function initializeMQTT() {
                                     }
                                 }
                             });
-                        } else if (message === 'OFF' || message === 'off') {
+                        } else if (messageStr === 'OFF' || messageStr === 'off') {
                             lighting2Handler.switchOff(deviceIdFormatted, (error) => {
                                 if (error) {
                                     log('error', `❌ Erreur commande OFF: ${error.message}`);
@@ -304,9 +317,22 @@ function initializeMQTT() {
                                     }
                                 }
                             });
+                        } else {
+                            log('warn', `⚠️ Commande AC inconnue: ${messageStr}`);
                         }
                     }
+                } else {
+                    if (deviceType === 'switch' && !devices[deviceId]) {
+                        log('warn', `⚠️ Appareil non trouvé pour deviceId: ${deviceId}`);
+                        log('debug', `📋 Appareils disponibles: ${Object.keys(devices).join(', ')}`);
+                    } else if (deviceType === 'switch' && devices[deviceId] && devices[deviceId].type !== 'AC') {
+                        log('warn', `⚠️ Type d'appareil incorrect: ${devices[deviceId].type} (attendu: AC)`);
+                    } else if (deviceType === 'switch' && !lighting2Handler) {
+                        log('error', `❌ lighting2Handler non initialisé`);
+                    }
                 }
+            } else {
+                log('debug', `⚠️ Format de topic non reconnu: ${topic}`);
             }
         });
 
