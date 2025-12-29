@@ -8,7 +8,6 @@ RUN \
     npm
 
 # Copy data for add-on
-COPY app.js /
 COPY run.sh /
 RUN chmod a+x /run.sh
 

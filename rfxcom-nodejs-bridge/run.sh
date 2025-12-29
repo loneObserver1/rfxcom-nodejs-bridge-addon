@@ -2,5 +2,3 @@
 
 echo "Hello world!"
 
-node /app.js
-
