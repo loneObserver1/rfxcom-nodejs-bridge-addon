@@ -20,6 +20,7 @@ RUN npm install --production
 # Copy data for add-on
 COPY app.js /app/
 COPY mqtt_helper.js /app/
+COPY public /app/public
 COPY run.sh /
 RUN chmod a+x /run.sh
 
