@@ -131,3 +131,5 @@ L'add-on expose une API HTTP sur le port configuré (par défaut 8888) :
 
 Pour plus d'informations, consultez les logs de l'add-on dans Home Assistant.
 
+
+

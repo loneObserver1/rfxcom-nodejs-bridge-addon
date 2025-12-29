@@ -2,26 +2,58 @@ const mqtt = require('mqtt');
 
 // Gestion MQTT pour Home Assistant
 class MQTTHelper {
-    constructor(logFn) {
+    constructor(logFn, options = {}) {
         this.log = logFn;
         this.client = null;
         this.connected = false;
         this.baseTopic = 'homeassistant';
+        this.connectionAttempts = 0;
+        this.maxConnectionAttempts = 3;
+        this.shouldReconnect = true;
+        
+        // Récupérer les paramètres depuis les variables d'environnement ou les options
+        this.host = options.host || process.env.MQTT_HOST || 'core-mosquitto';
+        this.port = options.port || parseInt(process.env.MQTT_PORT || '1883');
+        this.username = options.username || process.env.MQTT_USER || '';
+        this.password = options.password || process.env.MQTT_PASSWORD || '';
     }
 
     connect() {
-        // Dans Home Assistant, MQTT est accessible via le broker intégré (Mosquitto)
-        // L'add-on peut accéder au broker via le réseau Docker interne
-        // Par défaut, Home Assistant utilise 'core-mosquitto' comme nom de service
-        const brokerUrl = process.env.MQTT_BROKER || 'mqtt://core-mosquitto:1883';
+        // Construire l'URL du broker MQTT
+        let brokerUrl;
+        if (this.username && this.password) {
+            brokerUrl = `mqtt://${this.username}:${this.password}@${this.host}:${this.port}`;
+        } else {
+            brokerUrl = `mqtt://${this.host}:${this.port}`;
+        }
+        
         const clientId = `rfxcom-bridge-${Date.now()}`;
         
-        this.log('info', `🔌 Tentative de connexion au broker MQTT: ${brokerUrl}`);
+        this.log('info', `🔌 Tentative de connexion au broker MQTT: ${this.host}:${this.port}`);
+        if (this.username) {
+            this.log('info', `   Utilisateur: ${this.username}`);
+        } else {
+            this.log('info', `   Connexion sans authentification`);
+        }
         this.log('info', `💡 Assurez-vous que l'add-on MQTT (Mosquitto) est installé et démarré dans Home Assistant`);
         
-        this.client = mqtt.connect(brokerUrl, {
+        // Vérifier si on a déjà atteint le maximum de tentatives
+        if (this.connectionAttempts >= this.maxConnectionAttempts) {
+            this.log('error', `❌ Nombre maximum de tentatives de connexion MQTT atteint (${this.maxConnectionAttempts})`);
+            this.log('error', `❌ Arrêt des tentatives de reconnexion. Vérifiez vos paramètres MQTT dans la configuration de l'add-on.`);
+            this.shouldReconnect = false;
+            return;
+        }
+        
+        this.connectionAttempts++;
+        this.log('info', `🔄 Tentative de connexion MQTT ${this.connectionAttempts}/${this.maxConnectionAttempts}`);
+        
+        // Désactiver la reconnexion automatique si on a atteint le maximum
+        const reconnectPeriod = (this.shouldReconnect && this.connectionAttempts < this.maxConnectionAttempts) ? 5000 : 0;
+        
+        const connectOptions = {
             clientId: clientId,
-            reconnectPeriod: 5000, // Réessayer toutes les 5 secondes en cas de déconnexion
+            reconnectPeriod: reconnectPeriod, // 0 = désactiver la reconnexion automatique
             connectTimeout: 10000, // Timeout de 10 secondes
             will: {
                 topic: `${this.baseTopic}/status/rfxcom-bridge`,
@@ -29,10 +61,22 @@ class MQTTHelper {
                 qos: 1,
                 retain: true
             }
-        });
+        };
+        
+        // Ajouter l'authentification si fournie
+        if (this.username) {
+            connectOptions.username = this.username;
+        }
+        if (this.password) {
+            connectOptions.password = this.password;
+        }
+        
+        this.client = mqtt.connect(brokerUrl, connectOptions);
 
         this.client.on('connect', () => {
             this.connected = true;
+            this.connectionAttempts = 0; // Réinitialiser le compteur en cas de succès
+            this.shouldReconnect = true; // Réactiver la reconnexion
             this.log('info', '✅ Connecté au broker MQTT Home Assistant');
             this.log('info', '📡 Les entités Home Assistant seront créées automatiquement pour les appareils ARC');
             
@@ -51,9 +95,30 @@ class MQTTHelper {
 
         this.client.on('error', (error) => {
             this.connected = false;
-            this.log('error', `❌ Erreur de connexion MQTT: ${error.message}`);
-            this.log('warn', `⚠️ Vérifiez que l'add-on MQTT (Mosquitto) est installé et démarré`);
-            this.log('warn', `⚠️ Les entités Home Assistant ne seront pas créées sans connexion MQTT`);
+            
+            // Messages d'erreur spécifiques selon le type d'erreur
+            if (error.message.includes('Not authorized') || error.message.includes('Connection refused')) {
+                this.log('error', `❌ Erreur d'authentification MQTT: ${error.message}`);
+                this.log('error', `❌ Vérifiez vos identifiants MQTT (utilisateur/mot de passe) dans la configuration de l'add-on`);
+                this.log('error', `❌ Ou laissez les champs vides pour utiliser la récupération automatique depuis Home Assistant`);
+            } else {
+                this.log('error', `❌ Erreur de connexion MQTT: ${error.message}`);
+                this.log('warn', `⚠️ Vérifiez que l'add-on MQTT (Mosquitto) est installé et démarré`);
+            }
+            
+            // Si on a atteint le maximum de tentatives, arrêter
+            if (this.connectionAttempts >= this.maxConnectionAttempts) {
+                this.log('error', `❌ Arrêt des tentatives de connexion MQTT après ${this.maxConnectionAttempts} tentatives`);
+                this.log('warn', `⚠️ Les entités Home Assistant ne seront pas créées sans connexion MQTT`);
+                this.log('warn', `⚠️ L'add-on continuera de fonctionner pour les commandes RFXCOM, mais sans intégration Home Assistant`);
+                this.shouldReconnect = false;
+                if (this.client) {
+                    this.client.end();
+                    this.client = null;
+                }
+            } else {
+                this.log('warn', `⚠️ Les entités Home Assistant ne seront pas créées sans connexion MQTT`);
+            }
         });
 
         this.client.on('close', () => {
@@ -67,7 +132,17 @@ class MQTTHelper {
         });
 
         this.client.on('reconnect', () => {
-            this.log('info', '🔄 Reconnexion au broker MQTT...');
+            if (this.connectionAttempts >= this.maxConnectionAttempts) {
+                // Arrêter la reconnexion si on a atteint le max
+                this.log('error', `❌ Arrêt de la reconnexion automatique après ${this.maxConnectionAttempts} tentatives`);
+                if (this.client) {
+                    this.client.end(true); // Forcer la fermeture
+                    this.client = null;
+                }
+                this.shouldReconnect = false;
+            } else {
+                this.log('info', `🔄 Reconnexion au broker MQTT... (tentative ${this.connectionAttempts + 1}/${this.maxConnectionAttempts})`);
+            }
         });
     }
 

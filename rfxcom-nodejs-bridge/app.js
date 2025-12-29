@@ -169,8 +169,29 @@ let mqttHelper = null;
 // Initialiser MQTT
 log('info', '🔧 Initialisation de la connexion MQTT...');
 log('info', '📋 Prérequis: L\'add-on MQTT (Mosquitto) doit être installé et démarré dans Home Assistant');
+
+// Récupérer les paramètres MQTT depuis les variables d'environnement
+const MQTT_HOST = process.env.MQTT_HOST || '';
+const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
+const MQTT_USER = process.env.MQTT_USER || '';
+const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
+
+if (MQTT_HOST) {
+    log('info', `📡 Configuration MQTT: ${MQTT_HOST}:${MQTT_PORT}`);
+    if (MQTT_USER) {
+        log('info', `   Authentification: ${MQTT_USER}`);
+    }
+} else {
+    log('warn', '⚠️ Aucun host MQTT configuré, utilisation des valeurs par défaut');
+}
+
 try {
-    mqttHelper = new MQTTHelper(log);
+    mqttHelper = new MQTTHelper(log, {
+        host: MQTT_HOST || 'core-mosquitto',
+        port: MQTT_PORT,
+        username: MQTT_USER,
+        password: MQTT_PASSWORD
+    });
     
     // Gérer les messages MQTT (commandes depuis Home Assistant)
     mqttHelper.setMessageHandler((topic, message) => {
