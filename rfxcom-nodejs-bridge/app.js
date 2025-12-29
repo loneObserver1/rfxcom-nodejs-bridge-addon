@@ -761,45 +761,22 @@ function sendArcCommand(deviceId, command, res) {
 
     let responseSent = false;
 
-    // Timeout de sécurité pour éviter que la requête reste en pending
-    const timeout = setTimeout(() => {
-        if (!responseSent) {
-            responseSent = true;
-            log('warn', `⚠️ Timeout lors de l'envoi de la commande ${command}, réponse envoyée quand même`);
-            res.json({
-                status: 'success',
-                message: `Commande ${command} envoyée (timeout, mais la commande a probablement été transmise)`,
-                device: deviceId,
-                command: command
-            });
-        }
-    }, 2000); // 2 secondes de timeout
-
+    // Le callback du package rfxcom n'est souvent appelé qu'en cas d'erreur
+    // On envoie donc la réponse immédiatement après l'appel, et on utilise le callback uniquement pour les erreurs
     const callback = (error) => {
-        clearTimeout(timeout);
-
         if (responseSent) {
-            log('debug', `Callback reçu après timeout pour la commande ${command}`);
-            return;
+            return; // Réponse déjà envoyée
         }
-
-        responseSent = true;
 
         if (error) {
+            responseSent = true;
             log('error', `❌ Erreur lors de l'envoi de la commande ${command}:`, error);
             return res.status(500).json({
                 status: 'error',
                 error: error.message
             });
         }
-
-        log('info', `✅ Commande ${command} envoyée avec succès à ${device.name} via RFXCOM`);
-        res.json({
-            status: 'success',
-            message: `Commande ${command} envoyée avec succès`,
-            device: deviceId,
-            command: command
-        });
+        // En cas de succès, le callback n'est généralement pas appelé par rfxcom
     };
 
     try {
@@ -808,18 +785,24 @@ function sendArcCommand(deviceId, command, res) {
         } else if (command === 'off' || command === 'down' || command === 'stop') {
             lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
         } else {
-            clearTimeout(timeout);
             return res.status(400).json({
                 status: 'error',
                 error: 'Commande invalide'
             });
         }
 
-        // Si le callback est appelé de manière synchrone, on le détecte
-        // Sinon, le timeout s'occupera de répondre
-        log('debug', `Commande ${command} transmise à lighting1Handler`);
+        // Envoyer la réponse immédiatement après l'appel
+        // Le package rfxcom envoie la commande de manière synchrone ou asynchrone
+        // mais ne confirme généralement pas le succès via le callback
+        responseSent = true;
+        log('info', `✅ Commande ${command} transmise à ${device.name} via RFXCOM`);
+        res.json({
+            status: 'success',
+            message: `Commande ${command} envoyée avec succès`,
+            device: deviceId,
+            command: command
+        });
     } catch (error) {
-        clearTimeout(timeout);
         if (!responseSent) {
             responseSent = true;
             log('error', `❌ Exception lors de l'envoi de la commande ${command}:`, error);
