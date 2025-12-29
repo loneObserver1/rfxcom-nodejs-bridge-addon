@@ -6,7 +6,9 @@
     "GIT_EDITOR=code --wait",
     "--privileged",
     "-p",
-    "7123:8123"
+    "7123:8123",
+    "-p",
+    "8888:8888"
   ],
   "workspaceFolder": "/mnt/supervisor/addons/local/${localWorkspaceFolderBasename}",
   "workspaceMount": "source=${localWorkspaceFolder},target=${containerWorkspaceFolder},type=bind,consistency=cached",
@@ -32,7 +34,8 @@
         "editor.formatOnType": true,
         "files.trimTrailingWhitespace": true,
         "files.eol": "\n"
-      }
+      },
+      "forwardPorts": [8888]
     }
   },
   "mounts": [

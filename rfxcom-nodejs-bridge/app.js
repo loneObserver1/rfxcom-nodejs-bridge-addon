@@ -1,6 +1,7 @@
 const rfxcom = require('rfxcom');
 const fs = require('fs');
 const express = require('express');
+const http = require('http');
 const MQTTHelper = require('./mqtt_helper');
 
 // Récupérer les variables d'environnement
@@ -25,7 +26,7 @@ const LOG_LEVELS = {
 function log(level, ...args) {
     const currentLevel = LOG_LEVELS[LOG_LEVEL] || LOG_LEVELS.info;
     const messageLevel = LOG_LEVELS[level] || LOG_LEVELS.info;
-    
+
     if (messageLevel <= currentLevel) {
         const prefix = level.toUpperCase().padEnd(5);
         console.log(`[${prefix}]`, ...args);
@@ -52,7 +53,7 @@ function loadDevices() {
     try {
         // S'assurer que le répertoire existe
         ensureDataDirectory();
-        
+
         if (fs.existsSync(DEVICES_FILE)) {
             const data = fs.readFileSync(DEVICES_FILE, 'utf8');
             if (data.trim() === '') {
@@ -96,12 +97,12 @@ function saveDevices() {
     try {
         // S'assurer que le répertoire existe avant d'écrire
         ensureDataDirectory();
-        
+
         // Créer un fichier temporaire puis le renommer pour éviter la corruption en cas d'erreur
         const tempFile = `${DEVICES_FILE}.tmp`;
         fs.writeFileSync(tempFile, JSON.stringify(devices, null, 2), 'utf8');
         fs.renameSync(tempFile, DEVICES_FILE);
-        
+
         log('debug', `💾 ${Object.keys(devices).length} appareil(s) sauvegardé(s) dans ${DEVICES_FILE}`);
     } catch (error) {
         log('error', `❌ Erreur lors de la sauvegarde des appareils: ${error.message}`);
@@ -123,7 +124,7 @@ function saveDevices() {
 function findFreeArcCode() {
     const houseCodes = 'ABCDEFGHIJKLMNOP';
     const unitCodes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-    
+
     for (const houseCode of houseCodes) {
         for (const unitCode of unitCodes) {
             const id = `ARC_${houseCode}_${unitCode}`;
@@ -145,20 +146,20 @@ log('info', `🌐 Port API: ${API_PORT}`);
 // Charger les appareils
 loadDevices();
 
-// Vérifier si le port série existe
+// Vérifier si le port série existe (mais ne pas bloquer le démarrage du serveur)
 if (!fs.existsSync(SERIAL_PORT)) {
     log('error', `❌ Le port série ${SERIAL_PORT} n'existe pas !`);
+    log('warn', `⚠️ Le serveur démarrera quand même, mais RFXCOM ne fonctionnera pas.`);
     log('info', `💡 Vérifiez que votre émetteur RFXCOM est bien branché.`);
-    process.exit(1);
-}
-
-// Vérifier les permissions sur le port série
-try {
-    fs.accessSync(SERIAL_PORT, fs.constants.R_OK | fs.constants.W_OK);
-    log('info', `✅ Permissions OK sur ${SERIAL_PORT}`);
-} catch (error) {
-    log('error', `❌ Pas de permissions en lecture/écriture sur ${SERIAL_PORT}`);
-    process.exit(1);
+} else {
+    // Vérifier les permissions sur le port série
+    try {
+        fs.accessSync(SERIAL_PORT, fs.constants.R_OK | fs.constants.W_OK);
+        log('info', `✅ Permissions OK sur ${SERIAL_PORT}`);
+    } catch (error) {
+        log('error', `❌ Pas de permissions en lecture/écriture sur ${SERIAL_PORT}`);
+        log('warn', `⚠️ Le serveur démarrera quand même, mais RFXCOM ne fonctionnera pas.`);
+    }
 }
 
 // Initialiser le module RFXCOM
@@ -193,20 +194,20 @@ function initializeMQTT() {
             username: MQTT_USER,
             password: MQTT_PASSWORD
         });
-        
+
         // Gérer les messages MQTT (commandes depuis Home Assistant)
         mqttHelper.setMessageHandler((topic, message) => {
             log('debug', `📨 Message MQTT reçu: ${topic} -> ${message}`);
-            
+
             // Format: rfxcom/cover/{deviceId}/set ou rfxcom/cover/{deviceId}/set_position
             const parts = topic.split('/');
             if (parts.length >= 4 && parts[0] === 'rfxcom' && parts[1] === 'cover') {
                 const deviceId = parts[2];
                 const commandType = parts[3];
-                
+
                 if (devices[deviceId] && devices[deviceId].type === 'ARC' && lighting1Handler) {
                     const device = devices[deviceId];
-                    
+
                     if (commandType === 'set') {
                         // Commandes: OPEN, CLOSE, STOP
                         if (message === 'OPEN' || message === 'open') {
@@ -245,7 +246,7 @@ function initializeMQTT() {
                 }
             }
         });
-        
+
         mqttHelper.connect();
     } catch (error) {
         log('warn', `⚠️ Impossible d'initialiser MQTT: ${error.message}`);
@@ -253,110 +254,129 @@ function initializeMQTT() {
     }
 }
 
-try {
-    log('info', `🔌 Initialisation du module RFXCOM sur ${SERIAL_PORT}...`);
+// Initialiser RFXCOM de manière asynchrone sans bloquer le serveur
+function initializeRFXCOMAsync() {
+    if (!fs.existsSync(SERIAL_PORT)) {
+        log('warn', `⚠️ Port série ${SERIAL_PORT} non disponible, RFXCOM ne sera pas initialisé`);
+        return;
+    }
 
-    const debugMode = LOG_LEVEL === 'debug';
-    rfxtrx = new rfxcom.RfxCom(SERIAL_PORT, {
-        debug: debugMode
-    });
+    try {
+        log('info', `🔌 Initialisation du module RFXCOM sur ${SERIAL_PORT}...`);
 
-    rfxtrx.initialise((error) => {
-        if (error) {
-            log('error', `❌ Erreur lors de l'initialisation RFXCOM:`, error);
-            process.exit(1);
-        } else {
-            log('info', `✅ RFXCOM initialisé avec succès sur ${SERIAL_PORT}`);
-            
-            // Créer le handler pour Lighting1 (ARC, etc.)
-            lighting1Handler = new rfxcom.Lighting1(rfxtrx, rfxcom.lighting1.ARC);
-            
-            // Écouter les messages si la détection automatique est activée
-            if (AUTO_DISCOVERY) {
-                log('info', `👂 Écoute des messages RFXCOM pour détection automatique...`);
-                rfxtrx.on('receive', (evt, msg) => {
-                    if (msg) {
-                        log('debug', `📨 Message reçu:`, JSON.stringify(msg));
-                        handleReceivedMessage(msg);
-                    } else {
-                        log('warn', `⚠️ Message RFXCOM reçu mais vide ou invalide`);
-                    }
-                });
-            }
-            
-            log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
-            
-            // Initialiser MQTT après l'initialisation complète de RFXCOM
-            // Utiliser un petit délai pour s'assurer que tout est prêt
-            setTimeout(() => {
-                initializeMQTT();
-                
-                // Configurer la publication des entités après connexion MQTT
-                if (mqttHelper) {
-                    mqttHelper.onConnect = () => {
-                        // Test simple de connexion : publier le statut
-                        log('info', '✅ Test de connexion MQTT réussi');
-                        
-                        // Publier les entités existantes s'il y en a
-                        const deviceCount = Object.keys(devices).length;
-                        if (deviceCount > 0) {
-                            setTimeout(() => {
-                                log('info', `📡 Publication des ${deviceCount} entité(s) Home Assistant existante(s)...`);
-                                Object.keys(devices).forEach(deviceId => {
-                                    const device = devices[deviceId];
-                                    if (device.type === 'ARC') {
-                                        mqttHelper.publishCoverDiscovery({ ...device, id: deviceId });
-                                    } else if (device.type === 'TEMP_HUM') {
-                                        mqttHelper.publishTempHumDiscovery({ ...device, id: deviceId });
-                                    }
-                                });
-                            }, 1000);
+        const debugMode = LOG_LEVEL === 'debug';
+        rfxtrx = new rfxcom.RfxCom(SERIAL_PORT, {
+            debug: debugMode
+        });
+
+        // Ajouter un timeout pour éviter que l'initialisation bloque indéfiniment
+        const initTimeout = setTimeout(() => {
+            log('warn', `⚠️ Timeout lors de l'initialisation RFXCOM (30s), le serveur continue sans RFXCOM`);
+        }, 30000);
+
+        rfxtrx.initialise((error) => {
+            clearTimeout(initTimeout);
+
+            if (error) {
+                log('error', `❌ Erreur lors de l'initialisation RFXCOM:`, error);
+                log('warn', `⚠️ Le serveur continue sans RFXCOM, vous pouvez réessayer plus tard`);
+            } else {
+                log('info', `✅ RFXCOM initialisé avec succès sur ${SERIAL_PORT}`);
+
+                // Créer le handler pour Lighting1 (ARC, etc.)
+                lighting1Handler = new rfxcom.Lighting1(rfxtrx, rfxcom.lighting1.ARC);
+
+                // Écouter les messages si la détection automatique est activée
+                if (AUTO_DISCOVERY) {
+                    log('info', `👂 Écoute des messages RFXCOM pour détection automatique...`);
+                    rfxtrx.on('receive', (evt, msg) => {
+                        if (msg) {
+                            log('debug', `📨 Message reçu:`, JSON.stringify(msg));
+                            handleReceivedMessage(msg);
                         } else {
-                            log('info', '📡 Aucun appareil enregistré, prêt à en ajouter');
+                            log('warn', `⚠️ Message RFXCOM reçu mais vide ou invalide`);
                         }
-                    };
+                    });
                 }
-            }, 500);
-        }
-    });
 
-    // Gérer l'arrêt propre
-    process.on('SIGTERM', () => {
-        log('info', '🛑 Arrêt du module RFXCOM...');
-        saveDevices();
-        if (mqttHelper) {
-            mqttHelper.disconnect();
-        }
-        if (rfxtrx) {
-            try {
-                rfxtrx.close();
-            } catch (err) {
-                log('warn', `⚠️ Erreur lors de la fermeture: ${err.message}`);
+                log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
+
+                // Initialiser MQTT après l'initialisation complète de RFXCOM
+                // Utiliser un petit délai pour s'assurer que tout est prêt
+                setTimeout(() => {
+                    initializeMQTT();
+
+                    // Configurer la publication des entités après connexion MQTT
+                    if (mqttHelper) {
+                        mqttHelper.onConnect = () => {
+                            // Test simple de connexion : publier le statut
+                            log('info', '✅ Test de connexion MQTT réussi');
+
+                            // Publier les entités existantes s'il y en a
+                            const deviceCount = Object.keys(devices).length;
+                            if (deviceCount > 0) {
+                                setTimeout(() => {
+                                    log('info', `📡 Publication des ${deviceCount} entité(s) Home Assistant existante(s)...`);
+                                    Object.keys(devices).forEach(deviceId => {
+                                        const device = devices[deviceId];
+                                        if (device.type === 'ARC') {
+                                            mqttHelper.publishCoverDiscovery({ ...device, id: deviceId });
+                                        } else if (device.type === 'TEMP_HUM') {
+                                            mqttHelper.publishTempHumDiscovery({ ...device, id: deviceId });
+                                        }
+                                    });
+                                }, 1000);
+                            } else {
+                                log('info', '📡 Aucun appareil enregistré, prêt à en ajouter');
+                            }
+                        };
+                    }
+                }, 500);
             }
-        }
-        process.exit(0);
-    });
-
-    process.on('SIGINT', () => {
-        log('info', '🛑 Arrêt du module RFXCOM...');
-        saveDevices();
-        if (mqttHelper) {
-            mqttHelper.disconnect();
-        }
-        if (rfxtrx) {
-            try {
-                rfxtrx.close();
-            } catch (err) {
-                log('warn', `⚠️ Erreur lors de la fermeture: ${err.message}`);
-            }
-        }
-        process.exit(0);
-    });
-
-} catch (error) {
-    log('error', `❌ Erreur lors de la création de la connexion RFXCOM:`, error);
-    process.exit(1);
+        });
+    } catch (error) {
+        log('error', `❌ Erreur lors de la création de la connexion RFXCOM:`, error);
+        log('warn', `⚠️ Le serveur continue sans RFXCOM`);
+    }
 }
+
+// L'initialisation RFXCOM sera démarrée après le démarrage du serveur
+// (voir plus bas dans le code, après app.listen)
+
+// Gérer l'arrêt propre
+process.on('SIGTERM', () => {
+    log('info', '🛑 Arrêt du module RFXCOM...');
+    saveDevices();
+    if (mqttHelper) {
+        mqttHelper.disconnect();
+    }
+    if (rfxtrx) {
+        try {
+            rfxtrx.close();
+        } catch (err) {
+            log('warn', `⚠️ Erreur lors de la fermeture: ${err.message}`);
+        }
+    }
+    process.exit(0);
+});
+
+process.on('SIGINT', () => {
+    log('info', '🛑 Arrêt du module RFXCOM...');
+    saveDevices();
+    if (mqttHelper) {
+        mqttHelper.disconnect();
+    }
+    if (rfxtrx) {
+        try {
+            rfxtrx.close();
+        } catch (err) {
+            log('warn', `⚠️ Erreur lors de la fermeture: ${err.message}`);
+        }
+    }
+    process.exit(0);
+});
+
+// L'initialisation RFXCOM est maintenant asynchrone et ne bloque plus le démarrage
 
 // Gérer les messages reçus
 function handleReceivedMessage(msg) {
@@ -365,7 +385,7 @@ function handleReceivedMessage(msg) {
         log('warn', `⚠️ Message invalide reçu:`, msg);
         return;
     }
-    
+
     // Détecter les nouveaux appareils ARC
     if (msg.type === 'lighting1' && msg.subtype === 'ARC') {
         const id = `ARC_${msg.houseCode}_${msg.unitCode}`;
@@ -380,21 +400,21 @@ function handleReceivedMessage(msg) {
                 discoveredAt: new Date().toISOString()
             };
             saveDevices();
-            
+
             // Publier la découverte Home Assistant
             if (mqttHelper && mqttHelper.connected) {
                 mqttHelper.publishCoverDiscovery({ ...devices[id], id: id });
             }
         }
     }
-    
+
     // Détecter les sondes de température/humidité
     // Le package rfxcom peut utiliser différents noms de type selon la version
     if (msg.type === 'tempHumidity' || msg.type === 'TEMP_HUM' || msg.packetType === 'TEMP_HUM') {
         // Extraire l'ID de la sonde depuis différents champs possibles
         const sensorId = msg.id || msg.sensorId || msg.ID || `temp_${msg.channel || msg.channelNumber || 0}`;
         const id = `TEMP_HUM_${sensorId}`;
-        
+
         if (!devices[id]) {
             log('info', `🆕 Nouvelle sonde température/humidité détectée: ID ${sensorId}, Canal ${msg.channel || msg.channelNumber || 'N/A'}`);
             devices[id] = {
@@ -407,19 +427,19 @@ function handleReceivedMessage(msg) {
                 discoveredAt: new Date().toISOString()
             };
             saveDevices();
-            
+
             // Publier la découverte Home Assistant
             if (mqttHelper && mqttHelper.connected) {
                 mqttHelper.publishTempHumDiscovery({ ...devices[id], id: id });
             }
         }
-        
+
         // Publier les valeurs actuelles
         if (mqttHelper && mqttHelper.connected && devices[id]) {
             // Le package peut utiliser différents noms pour la température
             const temperature = msg.temperature || msg.Temperature;
             const humidity = msg.humidity || msg.Humidity;
-            
+
             if (temperature !== undefined && temperature !== null) {
                 mqttHelper.publishSensorState(`${id}_temperature`, temperature.toString(), '°C');
             }
@@ -437,9 +457,6 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Servir les fichiers statiques (interface web)
-app.use(express.static('/app/public'));
-
 // CORS
 app.use((req, res, next) => {
     res.header('Access-Control-Allow-Origin', '*');
@@ -452,15 +469,47 @@ app.use((req, res, next) => {
     }
 });
 
-// Logging middleware pour les requêtes API
+// Logging middleware pour toutes les requêtes
 app.use((req, res, next) => {
-    if (req.path.startsWith('/api/')) {
-        log('info', `📥 ${req.method} ${req.path}`);
-    }
+    log('info', `📥 ${req.method} ${req.path}`);
     next();
 });
 
-// Interface web - servie automatiquement par express.static depuis /app/public
+// Vérifier que le répertoire public existe
+const PUBLIC_DIR = '/app/public';
+if (fs.existsSync(PUBLIC_DIR)) {
+    log('info', `📁 Répertoire public trouvé: ${PUBLIC_DIR}`);
+    // Servir les fichiers statiques (interface web)
+    app.use(express.static(PUBLIC_DIR));
+
+    // Route explicite pour la page d'accueil
+    app.get('/', (req, res) => {
+        const indexPath = `${PUBLIC_DIR}/index.html`;
+        if (fs.existsSync(indexPath)) {
+            res.sendFile(indexPath);
+        } else {
+            log('error', `❌ Fichier index.html non trouvé dans ${PUBLIC_DIR}`);
+            res.status(404).json({
+                status: 'error',
+                error: 'Interface web non disponible'
+            });
+        }
+    });
+} else {
+    log('warn', `⚠️ Répertoire public non trouvé: ${PUBLIC_DIR}`);
+    // Route de fallback si le répertoire public n'existe pas
+    app.get('/', (req, res) => {
+        res.json({
+            status: 'ok',
+            message: 'API RFXCOM Node.js Bridge',
+            endpoints: {
+                health: '/health',
+                devices: '/api/devices',
+                addDevice: 'POST /api/devices/arc'
+            }
+        });
+    });
+}
 
 // Health check
 app.get('/health', (req, res) => {
@@ -502,7 +551,7 @@ app.post('/api/devices/arc', (req, res) => {
         log('info', `📥 Requête reçue pour ajouter un appareil ARC`);
         const { name, houseCode, unitCode } = req.body;
         log('info', `📝 Données reçues: name="${name}", houseCode="${houseCode || 'auto'}", unitCode="${unitCode || 'auto'}"`);
-        
+
         if (!name) {
             return res.status(400).json({
                 status: 'error',
@@ -513,7 +562,7 @@ app.post('/api/devices/arc', (req, res) => {
         // Trouver un code libre si non fourni
         let finalHouseCode = houseCode;
         let finalUnitCode = unitCode;
-        
+
         if (!finalHouseCode || !finalUnitCode) {
             const freeCode = findFreeArcCode();
             if (!freeCode) {
@@ -527,7 +576,7 @@ app.post('/api/devices/arc', (req, res) => {
         }
 
         const id = `ARC_${finalHouseCode}_${finalUnitCode}`;
-        
+
         if (devices[id]) {
             return res.status(400).json({
                 status: 'error',
@@ -544,10 +593,10 @@ app.post('/api/devices/arc', (req, res) => {
             paired: false,
             createdAt: new Date().toISOString()
         };
-        
+
         saveDevices();
         log('info', `✅ Appareil ARC créé: ${name} (${id}) - House code: ${finalHouseCode}, Unit code: ${finalUnitCode}`);
-        
+
         // Publier la découverte Home Assistant
         if (mqttHelper && mqttHelper.connected) {
             mqttHelper.publishCoverDiscovery({ ...devices[id], id: id });
@@ -555,7 +604,7 @@ app.post('/api/devices/arc', (req, res) => {
         } else {
             log('warn', `⚠️ MQTT non connecté, l'entité Home Assistant sera créée lors de la prochaine connexion`);
         }
-        
+
         res.json({
             status: 'success',
             device: devices[id],
@@ -574,7 +623,7 @@ app.post('/api/devices/arc', (req, res) => {
 app.post('/api/devices/arc/pair', (req, res) => {
     try {
         const { deviceId } = req.body;
-        
+
         if (!deviceId || !devices[deviceId]) {
             return res.status(400).json({
                 status: 'error',
@@ -606,13 +655,13 @@ app.post('/api/devices/arc/pair', (req, res) => {
                     error: error.message
                 });
             }
-            
+
             log('info', `✅ Commande d'appairage envoyée pour ${device.name}`);
-            
+
             // Marquer comme appairé (l'utilisateur confirmera via /api/devices/arc/confirm-pair)
             devices[deviceId].pairingSent = true;
             saveDevices();
-            
+
             res.json({
                 status: 'success',
                 message: 'Commande d\'appairage envoyée. Vérifiez si l\'appareil a répondu, puis utilisez /api/devices/arc/confirm-pair pour confirmer.'
@@ -631,7 +680,7 @@ app.post('/api/devices/arc/pair', (req, res) => {
 app.post('/api/devices/arc/confirm-pair', (req, res) => {
     try {
         const { deviceId, confirmed } = req.body;
-        
+
         if (!deviceId || !devices[deviceId]) {
             return res.status(400).json({
                 status: 'error',
@@ -644,7 +693,7 @@ app.post('/api/devices/arc/confirm-pair', (req, res) => {
             device.paired = true;
             device.pairedAt = new Date().toISOString();
             saveDevices();
-            
+
             log('info', `✅ Appairage confirmé pour ${device.name}`);
             res.json({
                 status: 'success',
@@ -669,7 +718,7 @@ app.post('/api/devices/arc/confirm-pair', (req, res) => {
 app.post('/api/devices/arc/test', (req, res) => {
     try {
         const { deviceId, command } = req.body;
-        
+
         if (!deviceId || !devices[deviceId]) {
             return res.status(400).json({
                 status: 'error',
@@ -708,7 +757,7 @@ app.post('/api/devices/arc/test', (req, res) => {
                     error: error.message
                 });
             }
-            
+
             log('info', `✅ Commande ${command} envoyée à ${device.name}`);
             res.json({
                 status: 'success',
@@ -741,10 +790,10 @@ app.delete('/api/devices/:id', (req, res) => {
         if (mqttHelper) {
             mqttHelper.removeDiscovery(deviceId);
         }
-        
+
         delete devices[deviceId];
         saveDevices();
-        
+
         res.json({
             status: 'success',
             message: 'Appareil supprimé'
@@ -787,8 +836,14 @@ process.on('unhandledRejection', (reason, promise) => {
     // Ne pas arrêter le processus, juste logger
 });
 
-// Démarrer le serveur Express
-const server = app.listen(API_PORT, '0.0.0.0', () => {
+// Démarrer le serveur Express IMMÉDIATEMENT
+// Le serveur doit démarrer avant l'initialisation RFXCOM pour être accessible
+const server = app.listen(API_PORT, '0.0.0.0', (err) => {
+    if (err) {
+        log('error', `❌ Erreur lors du démarrage du serveur: ${err.message}`);
+        process.exit(1);
+    }
+
     log('info', `🌐 Serveur API démarré sur le port ${API_PORT}`);
     log('info', `🌐 Interface web disponible sur http://localhost:${API_PORT}/`);
     log('info', `📡 Endpoints disponibles:`);
@@ -801,7 +856,99 @@ const server = app.listen(API_PORT, '0.0.0.0', () => {
     log('info', `   POST /api/devices/arc/confirm-pair - Confirmer l'appairage ARC`);
     log('info', `   POST /api/devices/arc/test - Tester un appareil ARC (on/off/up/down/stop)`);
     log('info', `   DELETE /api/devices/:id - Supprimer un appareil`);
+
+    // Vérifier que le serveur écoute bien
+    server.on('error', (err) => {
+        log('error', `❌ Erreur serveur: ${err.message}`);
+    });
+
+    server.on('connection', (socket) => {
+        log('debug', `🔌 Nouvelle connexion depuis ${socket.remoteAddress}:${socket.remotePort}`);
+    });
+
+    // Tester que le serveur répond correctement
+    setTimeout(() => {
+        testServerHealth();
+    }, 1000);
+
+    // Démarrer l'initialisation RFXCOM APRÈS le démarrage du serveur
+    // Cela garantit que le serveur HTTP est accessible même si RFXCOM ne s'initialise pas
+    setTimeout(() => {
+        initializeRFXCOMAsync();
+    }, 500);
 });
+
+// Fonction pour tester que le serveur répond
+function testServerHealth() {
+    log('info', '🧪 Test de santé du serveur...');
+
+    const testUrl = `http://localhost:${API_PORT}`;
+    const testEndpoints = [
+        { path: '/', name: 'Interface web (/)', expectedStatus: 200 },
+        { path: '/health', name: 'Health check (/health)', expectedStatus: 200 },
+        { path: '/api/devices', name: 'API Devices (/api/devices)', expectedStatus: [200, 404] }
+    ];
+
+    let testsCompleted = 0;
+    let testsPassed = 0;
+    const totalTests = testEndpoints.length;
+
+    testEndpoints.forEach((endpoint) => {
+        const url = `${testUrl}${endpoint.path}`;
+
+        const req = http.get(url, (res) => {
+            let data = '';
+
+            res.on('data', (chunk) => {
+                data += chunk;
+            });
+
+            res.on('end', () => {
+                testsCompleted++;
+                const expectedStatuses = Array.isArray(endpoint.expectedStatus)
+                    ? endpoint.expectedStatus
+                    : [endpoint.expectedStatus];
+
+                if (expectedStatuses.includes(res.statusCode)) {
+                    testsPassed++;
+                    const dataLength = data.length > 0 ? ` (${data.length} bytes)` : '';
+                    log('info', `✅ ${endpoint.name}: OK (${res.statusCode})${dataLength}`);
+                } else {
+                    log('warn', `⚠️ ${endpoint.name}: Status ${res.statusCode} (attendu: ${expectedStatuses.join(' ou ')})`);
+                }
+
+                if (testsCompleted === totalTests) {
+                    if (testsPassed === totalTests) {
+                        log('info', `✅ Tous les tests de santé ont réussi (${testsPassed}/${totalTests})`);
+                    } else {
+                        log('warn', `⚠️ Tests de santé: ${testsPassed}/${totalTests} réussis`);
+                    }
+                }
+            });
+        });
+
+        req.on('error', (err) => {
+            testsCompleted++;
+            log('error', `❌ ${endpoint.name}: Erreur de connexion - ${err.message}`);
+
+            if (testsCompleted === totalTests) {
+                log('error', `❌ Tests de santé: ${testsPassed}/${totalTests} réussis`);
+                log('error', '❌ Le serveur pourrait ne pas être accessible depuis localhost');
+            }
+        });
+
+        req.setTimeout(5000, () => {
+            testsCompleted++;
+            req.destroy();
+            log('warn', `⚠️ ${endpoint.name}: Timeout après 5 secondes`);
+
+            if (testsCompleted === totalTests) {
+                log('warn', `⚠️ Tests de santé: ${testsPassed}/${totalTests} réussis`);
+                log('warn', '⚠️ Certains tests ont timeout, vérifiez que le serveur écoute bien sur le port');
+            }
+        });
+    });
+}
 
 // Gestion de l'arrêt propre
 process.on('SIGTERM', () => {

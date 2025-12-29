@@ -15,7 +15,7 @@ MQTT_PASSWORD=$(bashio::config 'mqtt_password' '')
 # Si les paramètres MQTT ne sont pas fournis, essayer de les récupérer depuis Home Assistant
 if [ -z "$MQTT_HOST" ] || [ -z "$MQTT_USER" ]; then
     bashio::log.info "Récupération automatique des paramètres MQTT depuis Home Assistant..."
-    
+
     # Essayer de récupérer depuis le service MQTT de Home Assistant
     # (qui expose les informations du broker MQTT, y compris Mosquitto broker)
     if bashio::services.available mqtt; then
@@ -25,7 +25,7 @@ if [ -z "$MQTT_HOST" ] || [ -z "$MQTT_USER" ]; then
         MQTT_PORT=$(bashio::services mqtt port)
         MQTT_USER=$(bashio::services mqtt username)
         MQTT_PASSWORD=$(bashio::services mqtt password)
-        
+
         bashio::log.info "✅ Paramètres MQTT récupérés automatiquement depuis le service MQTT"
         bashio::log.info "   Host: ${MQTT_HOST}"
         bashio::log.info "   Port: ${MQTT_PORT}"
