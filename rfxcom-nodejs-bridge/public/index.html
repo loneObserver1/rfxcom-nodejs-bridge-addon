@@ -211,9 +211,9 @@
                     <!-- Champs ARC (House Code + Unit Code) -->
                     <div id="arcFields" class="device-type-fields" style="display: none;">
                         <div class="form-group">
-                            <label for="houseCode">House Code (optionnel - laissé vide pour auto)</label>
+                            <label for="houseCode">House Code (optionnel - Auto par défaut)</label>
                             <select id="houseCode" name="houseCode">
-                                <option value="">Auto</option>
+                                <option value="" selected>Auto (génération automatique)</option>
                                 <option value="A">A</option>
                                 <option value="B">B</option>
                                 <option value="C">C</option>
@@ -233,20 +233,23 @@
                             </select>
                         </div>
                         <div class="form-group">
-                            <label for="unitCode">Unit Code (optionnel - laissé vide pour auto)</label>
-                            <input type="number" id="unitCode" name="unitCode" min="1" max="16" placeholder="1-16">
+                            <label for="unitCode">Unit Code (optionnel - Auto par défaut)</label>
+                            <input type="number" id="unitCode" name="unitCode" min="1" max="16" placeholder="Auto (1-16)">
+                            <small style="color: #666;">Laissé vide pour génération automatique</small>
                         </div>
                     </div>
                     
                     <!-- Champs AC (Device ID + Unit Code) -->
                     <div id="acFields" class="device-type-fields" style="display: none;">
                         <div class="form-group">
-                            <label for="acDeviceId">Device ID * (ex: 02382C82)</label>
-                            <input type="text" id="acDeviceId" name="deviceId" placeholder="02382C82" pattern="[0-9A-Fa-f]{8}" title="8 caractères hexadécimaux">
+                            <label for="acDeviceId">Device ID (optionnel - Auto par défaut, ex: 02382C82)</label>
+                            <input type="text" id="acDeviceId" name="deviceId" placeholder="Auto (génération automatique)" pattern="[0-9A-Fa-f]{6,8}" title="6-8 caractères hexadécimaux">
+                            <small style="color: #666;">Laissé vide pour génération automatique d'un Device ID aléatoire</small>
                         </div>
                         <div class="form-group">
-                            <label for="acUnitCode">Unit Code (optionnel, défaut: 0)</label>
-                            <input type="number" id="acUnitCode" name="unitCode" min="0" max="15" placeholder="0-15" value="0">
+                            <label for="acUnitCode">Unit Code (optionnel - Auto par défaut)</label>
+                            <input type="number" id="acUnitCode" name="unitCode" min="0" max="16" placeholder="Auto (0-16)">
+                            <small style="color: #666;">Laissé vide pour génération automatique</small>
                         </div>
                     </div>
                     
@@ -356,7 +359,7 @@
             } else if (deviceType === 'AC') {
                 acFields.style.display = 'block';
                 if (acDeviceId) {
-                    acDeviceId.setAttribute('required', 'required');
+                    acDeviceId.removeAttribute('required'); // Device ID optionnel maintenant
                 }
             }
         });
@@ -377,22 +380,23 @@
 
             if (deviceType === 'ARC') {
                 endpoint = '/api/devices/arc';
+                const houseCode = formData.get('houseCode');
+                const unitCode = formData.get('unitCode');
                 data = {
                     name: formData.get('name'),
-                    houseCode: formData.get('houseCode') || undefined,
-                    unitCode: formData.get('unitCode') ? parseInt(formData.get('unitCode')) : undefined
+                    // Envoyer undefined si vide pour génération automatique
+                    houseCode: houseCode && houseCode.trim() !== '' ? houseCode : undefined,
+                    unitCode: unitCode && unitCode.trim() !== '' ? parseInt(unitCode) : undefined
                 };
             } else if (deviceType === 'AC') {
                 endpoint = '/api/devices/ac';
                 const deviceId = formData.get('deviceId');
-                if (!deviceId) {
-                    showAlert('❌ Le Device ID est requis pour les appareils AC', 'error');
-                    return;
-                }
+                const unitCode = formData.get('unitCode');
                 data = {
                     name: formData.get('name'),
-                    deviceId: deviceId,
-                    unitCode: formData.get('unitCode') ? parseInt(formData.get('unitCode')) : 0
+                    // Envoyer undefined si vide pour génération automatique
+                    deviceId: deviceId && deviceId.trim() !== '' ? deviceId : undefined,
+                    unitCode: unitCode && unitCode.trim() !== '' ? parseInt(unitCode) : undefined
                 };
             } else {
                 showAlert('❌ Type d\'appareil non reconnu', 'error');
@@ -426,9 +430,42 @@
             }
         });
 
-        // Appairer un appareil (envoie ON)
+        // Appairer un appareil ARC
         async function pairDevice(deviceId) {
-            if (!confirm('Mettez l\'appareil en mode appairage, puis cliquez sur OK')) {
+            let device = null;
+            
+            // Si l'appareil n'existe pas, le créer avec un code libre
+            if (!deviceId) {
+                const name = prompt('Entrez le nom de l\'appareil:');
+                if (!name) {
+                    return;
+                }
+                
+                try {
+                    const createResponse = await fetch(API_BASE + '/api/devices/arc', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name })
+                    });
+                    
+                    const createResult = await createResponse.json();
+                    if (createResult.status === 'success') {
+                        // Récupérer l'ID de l'appareil créé
+                        deviceId = createResult.id || `ARC_${createResult.device.houseCode}_${createResult.device.unitCode}`;
+                        device = createResult.device;
+                        showAlert(`✅ Appareil créé: ${name} (${device.houseCode}${device.unitCode})`, 'success');
+                    } else {
+                        showAlert('❌ ' + createResult.error, 'error');
+                        return;
+                    }
+                } catch (error) {
+                    showAlert('Erreur lors de la création: ' + error.message, 'error');
+                    return;
+                }
+            }
+            
+            // Demander confirmation que l'appareil est en mode appairage
+            if (!confirm('⚠️ IMPORTANT: Mettez l\'appareil en mode appairage maintenant, puis cliquez sur OK')) {
                 return;
             }
 
@@ -442,7 +479,27 @@
                 const result = await response.json();
 
                 if (result.status === 'success') {
-                    showAlert(result.message || '✅ Appairage effectué (ON envoyé)', 'success');
+                    showAlert('✅ Commande ON envoyée. Vérifiez si l\'appareil a répondu.', 'success');
+                    
+                    // Demander confirmation si l'appairage a réussi
+                    if (confirm('L\'appareil a-t-il bien répondu (clignoté, bougé, etc.) ?')) {
+                        // Confirmer l'appairage
+                        const confirmResponse = await fetch(API_BASE + '/api/devices/arc/confirm-pair', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ deviceId, confirmed: true })
+                        });
+                        
+                        const confirmResult = await confirmResponse.json();
+                        if (confirmResult.status === 'success') {
+                            showAlert('✅ Appairage confirmé ! L\'appareil est maintenant appairé.', 'success');
+                        } else {
+                            showAlert('❌ ' + confirmResult.error, 'error');
+                        }
+                    } else {
+                        showAlert('⚠️ Appairage non confirmé. Vous pouvez réessayer en cliquant sur "Appairer" à nouveau.', 'info');
+                    }
+                    
                     loadDevices();
                 } else {
                     showAlert('❌ ' + result.error, 'error');
@@ -478,9 +535,42 @@
         }
 
 
-        // Appairer un appareil AC (envoie ON)
+        // Appairer un appareil AC
         async function pairAcDevice(deviceId) {
-            if (!confirm('Mettez l\'appareil en mode appairage, puis cliquez sur OK')) {
+            let device = null;
+            
+            // Si l'appareil n'existe pas, le créer avec un code libre
+            if (!deviceId) {
+                const name = prompt('Entrez le nom de l\'appareil:');
+                if (!name) {
+                    return;
+                }
+                
+                try {
+                    const createResponse = await fetch(API_BASE + '/api/devices/ac', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ name })
+                    });
+                    
+                    const createResult = await createResponse.json();
+                    if (createResult.status === 'success') {
+                        // Récupérer l'ID de l'appareil créé
+                        deviceId = createResult.id || `AC_${createResult.device.deviceId}_${createResult.device.unitCode}`;
+                        device = createResult.device;
+                        showAlert(`✅ Appareil créé: ${name} (${device.deviceId}/${device.unitCode})`, 'success');
+                    } else {
+                        showAlert('❌ ' + createResult.error, 'error');
+                        return;
+                    }
+                } catch (error) {
+                    showAlert('Erreur lors de la création: ' + error.message, 'error');
+                    return;
+                }
+            }
+            
+            // Demander confirmation que l'appareil est en mode appairage
+            if (!confirm('⚠️ IMPORTANT: Mettez l\'appareil en mode appairage maintenant, puis cliquez sur OK')) {
                 return;
             }
 
@@ -494,7 +584,27 @@
                 const result = await response.json();
 
                 if (result.status === 'success') {
-                    showAlert(result.message || '✅ Appairage effectué (ON envoyé)', 'success');
+                    showAlert('✅ Commande ON envoyée. Vérifiez si l\'appareil a répondu.', 'success');
+                    
+                    // Demander confirmation si l'appairage a réussi
+                    if (confirm('L\'appareil a-t-il bien répondu (clignoté, allumé, etc.) ?')) {
+                        // Confirmer l'appairage
+                        const confirmResponse = await fetch(API_BASE + '/api/devices/ac/confirm-pair', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ deviceId, confirmed: true })
+                        });
+                        
+                        const confirmResult = await confirmResponse.json();
+                        if (confirmResult.status === 'success') {
+                            showAlert('✅ Appairage confirmé ! L\'appareil est maintenant appairé.', 'success');
+                        } else {
+                            showAlert('❌ ' + confirmResult.error, 'error');
+                        }
+                    } else {
+                        showAlert('⚠️ Appairage non confirmé. Vous pouvez réessayer en cliquant sur "Appairer" à nouveau.', 'info');
+                    }
+                    
                     loadDevices();
                 } else {
                     showAlert('❌ ' + result.error, 'error');

@@ -136,6 +136,33 @@ function findFreeArcCode() {
     return null;
 }
 
+// Trouver un Device ID et Unit Code libre pour AC
+function findFreeAcCode() {
+    // Générer un Device ID aléatoire (6 caractères hexadécimaux)
+    const generateRandomDeviceId = () => {
+        const chars = '0123456789ABCDEF';
+        let result = '';
+        for (let i = 0; i < 6; i++) {
+            result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return result;
+    };
+
+    const unitCodes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+    
+    // Essayer jusqu'à 100 fois pour trouver une combinaison libre
+    for (let attempt = 0; attempt < 100; attempt++) {
+        const deviceId = generateRandomDeviceId();
+        for (const unitCode of unitCodes) {
+            const id = `AC_${deviceId}_${unitCode}`;
+            if (!devices[id]) {
+                return { deviceId, unitCode };
+            }
+        }
+    }
+    return null;
+}
+
 
 console.log(`🚀 RFXCOM Node.js Bridge add-on démarré`);
 log('info', `📡 Port série configuré: ${SERIAL_PORT}`);
@@ -659,11 +686,11 @@ app.post('/api/devices/arc', (req, res) => {
             });
         }
 
-        // Trouver un code libre si non fourni
+        // Trouver un code libre si non fourni (si l'un ou l'autre est manquant, on génère les deux)
         let finalHouseCode = houseCode;
         let finalUnitCode = unitCode;
 
-        if (!finalHouseCode || !finalUnitCode) {
+        if (!finalHouseCode || finalUnitCode === undefined || finalUnitCode === null || finalUnitCode === '') {
             const freeCode = findFreeArcCode();
             if (!freeCode) {
                 return res.status(400).json({
@@ -673,6 +700,7 @@ app.post('/api/devices/arc', (req, res) => {
             }
             finalHouseCode = freeCode.houseCode;
             finalUnitCode = freeCode.unitCode;
+            log('info', `🔍 Codes générés automatiquement: House Code ${finalHouseCode}, Unit Code ${finalUnitCode}`);
         }
 
         const id = `ARC_${finalHouseCode}_${finalUnitCode}`;
@@ -707,7 +735,8 @@ app.post('/api/devices/arc', (req, res) => {
 
         res.json({
             status: 'success',
-            device: devices[id],
+            device: { ...devices[id], id: id },
+            id: id,
             message: `Appareil ARC créé avec house code ${finalHouseCode} et unit code ${finalUnitCode}. Mettez l'appareil en mode appairage puis utilisez /api/devices/arc/pair`
         });
     } catch (error) {
@@ -759,20 +788,67 @@ app.post('/api/devices/arc/pair', (req, res) => {
 
             log('info', `✅ Commande d'appairage (ON) envoyée pour ${device.name}`);
 
-            // Marquer comme appairé directement (appairage = ON)
-            devices[deviceId].paired = true;
-            devices[deviceId].pairedAt = new Date().toISOString();
+            // Marquer que la commande d'appairage a été envoyée (attendre confirmation)
             devices[deviceId].pairingSent = true;
             saveDevices();
 
             res.json({
                 status: 'success',
-                message: 'Appairage effectué. L\'appareil devrait maintenant répondre aux commandes.',
-                device: devices[deviceId]
+                message: 'Commande d\'appairage (ON) envoyée. Vérifiez si l\'appareil a répondu.',
+                device: devices[deviceId],
+                requiresConfirmation: true
             });
         });
     } catch (error) {
         log('error', `❌ Erreur lors de l'appairage:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Confirmer l'appairage ARC
+app.post('/api/devices/arc/confirm-pair', (req, res) => {
+    try {
+        const { deviceId, confirmed } = req.body;
+
+        if (!deviceId || !devices[deviceId]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        const device = devices[deviceId];
+        if (device.type !== 'ARC') {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil n\'est pas de type ARC'
+            });
+        }
+
+        if (confirmed === true) {
+            device.paired = true;
+            device.pairedAt = new Date().toISOString();
+            saveDevices();
+
+            log('info', `✅ Appairage confirmé pour ${device.name}`);
+            res.json({
+                status: 'success',
+                message: 'Appairage confirmé. L\'appareil est maintenant appairé.',
+                device: devices[deviceId]
+            });
+        } else {
+            log('info', `⚠️ Appairage non confirmé pour ${device.name}`);
+            res.json({
+                status: 'info',
+                message: 'Appairage non confirmé. Vous pouvez réessayer.',
+                device: devices[deviceId]
+            });
+        }
+    } catch (error) {
+        log('error', `❌ Erreur lors de la confirmation:`, error);
         res.status(500).json({
             status: 'error',
             error: error.message
@@ -1117,16 +1193,25 @@ app.post('/api/devices/ac', (req, res) => {
             });
         }
 
-        if (!deviceId) {
-            return res.status(400).json({
-                status: 'error',
-                error: 'Le Device ID est requis (ex: 02382C82)'
-            });
+        // Trouver un code libre si non fourni (si l'un ou l'autre est manquant, on génère les deux)
+        let finalDeviceId = deviceId;
+        let finalUnitCode = unitCode;
+
+        if (!finalDeviceId || finalDeviceId === '' || finalUnitCode === undefined || finalUnitCode === null || finalUnitCode === '') {
+            const freeCode = findFreeAcCode();
+            if (!freeCode) {
+                return res.status(400).json({
+                    status: 'error',
+                    error: 'Aucun code libre disponible'
+                });
+            }
+            finalDeviceId = freeCode.deviceId;
+            finalUnitCode = freeCode.unitCode;
+            log('info', `🔍 Codes générés automatiquement: Device ID ${finalDeviceId}, Unit Code ${finalUnitCode}`);
         }
 
         // Normaliser le deviceId (enlever 0x si présent, mettre en majuscules)
-        const normalizedDeviceId = deviceId.toString().replace(/^0x/i, '').toUpperCase();
-        const finalUnitCode = unitCode || 0;
+        const normalizedDeviceId = finalDeviceId.toString().replace(/^0x/i, '').toUpperCase();
         const id = `AC_${normalizedDeviceId}_${finalUnitCode}`;
 
         // Vérifier si l'appareil existe déjà
@@ -1157,7 +1242,7 @@ app.post('/api/devices/ac', (req, res) => {
         res.json({
             status: 'success',
             message: 'Appareil AC ajouté avec succès',
-            device: devices[id],
+            device: { ...devices[id], id: id },
             id: id
         });
     } catch (error) {
@@ -1209,10 +1294,49 @@ app.post('/api/devices/ac/pair', (req, res) => {
 
             log('info', `✅ Commande d'appairage (ON) envoyée pour ${device.name}`);
 
-            // Marquer comme appairé directement (appairage = ON)
-            devices[deviceId].paired = true;
-            devices[deviceId].pairedAt = new Date().toISOString();
+            // Marquer que la commande d'appairage a été envoyée (attendre confirmation)
             devices[deviceId].pairingSent = true;
+            saveDevices();
+
+            res.json({
+                status: 'success',
+                message: 'Commande d\'appairage (ON) envoyée. Vérifiez si l\'appareil a répondu.',
+                device: devices[deviceId],
+                requiresConfirmation: true
+            });
+        });
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'appairage:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Confirmer l'appairage AC
+app.post('/api/devices/ac/confirm-pair', (req, res) => {
+    try {
+        const { deviceId, confirmed } = req.body;
+
+        if (!deviceId || !devices[deviceId]) {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        const device = devices[deviceId];
+        if (device.type !== 'AC') {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil n\'est pas de type AC'
+            });
+        }
+
+        if (confirmed === true) {
+            device.paired = true;
+            device.pairedAt = new Date().toISOString();
             saveDevices();
 
             // Publier la découverte Home Assistant
@@ -1220,14 +1344,22 @@ app.post('/api/devices/ac/pair', (req, res) => {
                 mqttHelper.publishSwitchDiscovery({ ...devices[deviceId], id: deviceId });
             }
 
+            log('info', `✅ Appairage confirmé pour ${device.name}`);
             res.json({
                 status: 'success',
-                message: 'Appairage effectué. L\'appareil devrait maintenant répondre aux commandes.',
+                message: 'Appairage confirmé. L\'appareil est maintenant appairé.',
                 device: devices[deviceId]
             });
-        });
+        } else {
+            log('info', `⚠️ Appairage non confirmé pour ${device.name}`);
+            res.json({
+                status: 'info',
+                message: 'Appairage non confirmé. Vous pouvez réessayer.',
+                device: devices[deviceId]
+            });
+        }
     } catch (error) {
-        log('error', `❌ Erreur lors de l'appairage:`, error);
+        log('error', `❌ Erreur lors de la confirmation:`, error);
         res.status(500).json({
             status: 'error',
             error: error.message
@@ -1432,6 +1564,7 @@ const server = app.listen(API_PORT, '0.0.0.0', (err) => {
     log('info', `   GET  /api/devices/:id - Obtenir un appareil`);
     log('info', `   POST /api/devices/arc - Ajouter un appareil ARC`);
     log('info', `   POST /api/devices/arc/pair - Appairer un appareil ARC (envoie ON)`);
+    log('info', `   POST /api/devices/arc/confirm-pair - Confirmer l'appairage ARC`);
     log('info', `   POST /api/devices/arc/:id/unpair - Désappairer un appareil ARC (envoie OFF)`);
     log('info', `   POST /api/devices/arc/:id/on - Ouvrir/Monter un appareil ARC`);
     log('info', `   POST /api/devices/arc/:id/off - Fermer/Descendre un appareil ARC`);
@@ -1440,6 +1573,7 @@ const server = app.listen(API_PORT, '0.0.0.0', (err) => {
     log('info', `   POST /api/devices/arc/:id/down - Alias pour OFF`);
     log('info', `   POST /api/devices/ac - Ajouter une prise AC`);
     log('info', `   POST /api/devices/ac/pair - Appairer une prise AC (envoie ON)`);
+    log('info', `   POST /api/devices/ac/confirm-pair - Confirmer l'appairage AC`);
     log('info', `   POST /api/devices/ac/:id/unpair - Désappairer une prise AC (envoie OFF)`);
     log('info', `   POST /api/devices/ac/:id/on - Allumer une prise AC`);
     log('info', `   POST /api/devices/ac/:id/off - Éteindre une prise AC`);
