@@ -16,3 +16,7 @@ rfxcom-nodejs-bridge/data/
 
 # Fichiers temporaires
 tmp/
+
+# Fichiers de test
+rfxcom-nodejs-bridge/test_*.js
+test_*.js
