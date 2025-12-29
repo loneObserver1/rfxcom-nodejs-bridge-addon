@@ -192,7 +192,8 @@ class MQTTHelper {
             return;
         }
 
-        const deviceId = device.id || `arc_${device.houseCode}_${device.unitCode}`;
+        // Utiliser l'ID exact de l'appareil (ex: ARC_A_1) pour correspondre à devices[deviceId]
+        const deviceId = device.id || `ARC_${device.houseCode}_${device.unitCode}`;
         const uniqueId = `rfxcom_arc_${device.houseCode}_${device.unitCode}`;
         const topic = `${this.baseTopic}/cover/rfxcom/${deviceId}/config`;
         
@@ -248,7 +249,8 @@ class MQTTHelper {
             return;
         }
 
-        const deviceId = device.id || `ac_${device.deviceId}_${device.unitCode}`;
+        // Utiliser l'ID exact de l'appareil (ex: AC_02382C82_2) pour correspondre à devices[deviceId]
+        const deviceId = device.id || `AC_${device.deviceId}_${device.unitCode}`;
         const uniqueId = `rfxcom_ac_${device.deviceId}_${device.unitCode}`;
         const topic = `${this.baseTopic}/switch/rfxcom/${deviceId}/config`;
         

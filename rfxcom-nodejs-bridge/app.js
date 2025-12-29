@@ -746,7 +746,7 @@ app.post('/api/devices/arc/pair', (req, res) => {
             });
         }
 
-        // Envoyer ON pour l'appairage
+        // Envoyer ON pour l'appairage (appairage = action ON)
         // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
         lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
             if (error) {
@@ -757,15 +757,18 @@ app.post('/api/devices/arc/pair', (req, res) => {
                 });
             }
 
-            log('info', `✅ Commande d'appairage envoyée pour ${device.name}`);
+            log('info', `✅ Commande d'appairage (ON) envoyée pour ${device.name}`);
 
-            // Marquer comme appairé (l'utilisateur confirmera via /api/devices/arc/confirm-pair)
+            // Marquer comme appairé directement (appairage = ON)
+            devices[deviceId].paired = true;
+            devices[deviceId].pairedAt = new Date().toISOString();
             devices[deviceId].pairingSent = true;
             saveDevices();
 
             res.json({
                 status: 'success',
-                message: 'Commande d\'appairage envoyée. Vérifiez si l\'appareil a répondu, puis utilisez /api/devices/arc/confirm-pair pour confirmer.'
+                message: 'Appairage effectué. L\'appareil devrait maintenant répondre aux commandes.',
+                device: devices[deviceId]
             });
         });
     } catch (error) {
@@ -777,37 +780,61 @@ app.post('/api/devices/arc/pair', (req, res) => {
     }
 });
 
-// Confirmer l'appairage ARC
-app.post('/api/devices/arc/confirm-pair', (req, res) => {
+// Désappairage ARC - Envoyer OFF pour désappairer (désappairage = action OFF)
+app.post('/api/devices/arc/:id/unpair', (req, res) => {
     try {
-        const { deviceId, confirmed } = req.body;
+        const deviceId = req.params.id;
 
         if (!deviceId || !devices[deviceId]) {
-            return res.status(400).json({
+            return res.status(404).json({
                 status: 'error',
                 error: 'Appareil non trouvé'
             });
         }
 
         const device = devices[deviceId];
-        if (confirmed === true) {
-            device.paired = true;
-            device.pairedAt = new Date().toISOString();
-            saveDevices();
-
-            log('info', `✅ Appairage confirmé pour ${device.name}`);
-            res.json({
-                status: 'success',
-                message: 'Appairage confirmé. Utilisez les endpoints /api/devices/arc/:id/on, /off, /stop pour contrôler l\'appareil.'
-            });
-        } else {
-            res.json({
-                status: 'info',
-                message: 'Appairage non confirmé. Réessayez le processus d\'appairage.'
+        if (device.type !== 'ARC') {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Cet appareil n\'est pas de type ARC'
             });
         }
+
+        if (!lighting1Handler) {
+            return res.status(500).json({
+                status: 'error',
+                error: 'RFXCOM non initialisé'
+            });
+        }
+
+        // Envoyer OFF pour le désappairage (désappairage = action OFF)
+        lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
+            if (error) {
+                log('error', `❌ Erreur lors du désappairage:`, error);
+                return res.status(500).json({
+                    status: 'error',
+                    error: error.message
+                });
+            }
+
+            log('info', `✅ Commande de désappairage (OFF) envoyée pour ${device.name}`);
+
+            // Marquer comme désappairé
+            devices[deviceId].paired = false;
+            devices[deviceId].pairingSent = false;
+            if (devices[deviceId].pairedAt) {
+                delete devices[deviceId].pairedAt;
+            }
+            saveDevices();
+
+            res.json({
+                status: 'success',
+                message: 'Désappairage effectué. L\'appareil ne répondra plus aux commandes.',
+                device: devices[deviceId]
+            });
+        });
     } catch (error) {
-        log('error', `❌ Erreur lors de la confirmation:`, error);
+        log('error', `❌ Erreur lors du désappairage:`, error);
         res.status(500).json({
             status: 'error',
             error: error.message
@@ -864,10 +891,25 @@ function sendArcCommand(deviceId, command, res) {
 
     try {
         // Pour Lighting1 (ARC), utiliser les méthodes wrapper switchUp, switchDown, stop
+        // Note: ON peut aussi désappairer si l'appareil n'est pas appairé
         if (command === 'on' || command === 'up') {
             lighting1Handler.switchUp(device.houseCode, device.unitCode, callback);
+            // Si l'appareil n'est pas appairé, ON l'appaire
+            if (!device.paired) {
+                device.paired = true;
+                device.pairedAt = new Date().toISOString();
+                saveDevices();
+            }
         } else if (command === 'off' || command === 'down') {
             lighting1Handler.switchDown(device.houseCode, device.unitCode, callback);
+            // OFF désappaire l'appareil
+            if (device.paired) {
+                device.paired = false;
+                if (device.pairedAt) {
+                    delete device.pairedAt;
+                }
+                saveDevices();
+            }
         } else if (command === 'stop') {
             lighting1Handler.stop(device.houseCode, device.unitCode, callback);
         } else {
@@ -1014,10 +1056,25 @@ function sendAcCommand(deviceId, command, res) {
         // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
         const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
 
+        // Note: ON peut aussi désappairer si l'appareil n'est pas appairé
         if (command === 'on') {
             lighting2Handler.switchOn(deviceIdFormatted, callback);
+            // Si l'appareil n'est pas appairé, ON l'appaire
+            if (!device.paired) {
+                device.paired = true;
+                device.pairedAt = new Date().toISOString();
+                saveDevices();
+            }
         } else if (command === 'off') {
             lighting2Handler.switchOff(deviceIdFormatted, callback);
+            // OFF désappaire l'appareil
+            if (device.paired) {
+                device.paired = false;
+                if (device.pairedAt) {
+                    delete device.pairedAt;
+                }
+                saveDevices();
+            }
         } else {
             return res.status(400).json({
                 status: 'error',
@@ -1139,7 +1196,7 @@ app.post('/api/devices/ac/pair', (req, res) => {
             });
         }
 
-        // Envoyer ON pour l'appairage
+        // Envoyer ON pour l'appairage (appairage = action ON)
         const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
         lighting2Handler.switchOn(deviceIdFormatted, (error) => {
             if (error) {
@@ -1150,15 +1207,23 @@ app.post('/api/devices/ac/pair', (req, res) => {
                 });
             }
 
-            log('info', `✅ Commande d'appairage envoyée pour ${device.name}`);
+            log('info', `✅ Commande d'appairage (ON) envoyée pour ${device.name}`);
 
-            // Marquer comme appairé (l'utilisateur confirmera via /api/devices/ac/confirm-pair)
+            // Marquer comme appairé directement (appairage = ON)
+            devices[deviceId].paired = true;
+            devices[deviceId].pairedAt = new Date().toISOString();
             devices[deviceId].pairingSent = true;
             saveDevices();
 
+            // Publier la découverte Home Assistant
+            if (mqttHelper && mqttHelper.connected) {
+                mqttHelper.publishSwitchDiscovery({ ...devices[deviceId], id: deviceId });
+            }
+
             res.json({
                 status: 'success',
-                message: 'Commande d\'appairage envoyée. Vérifiez si l\'appareil a répondu, puis utilisez /api/devices/ac/confirm-pair pour confirmer.'
+                message: 'Appairage effectué. L\'appareil devrait maintenant répondre aux commandes.',
+                device: devices[deviceId]
             });
         });
     } catch (error) {
@@ -1170,13 +1235,13 @@ app.post('/api/devices/ac/pair', (req, res) => {
     }
 });
 
-// Appairage AC - Étape 2: Confirmer l'appairage
-app.post('/api/devices/ac/confirm-pair', (req, res) => {
+// Désappairage AC - Envoyer OFF pour désappairer (désappairage = action OFF)
+app.post('/api/devices/ac/:id/unpair', (req, res) => {
     try {
-        const { deviceId, confirmed } = req.body;
+        const deviceId = req.params.id;
 
         if (!deviceId || !devices[deviceId]) {
-            return res.status(400).json({
+            return res.status(404).json({
                 status: 'error',
                 error: 'Appareil non trouvé'
             });
@@ -1190,32 +1255,42 @@ app.post('/api/devices/ac/confirm-pair', (req, res) => {
             });
         }
 
-        if (confirmed) {
-            devices[deviceId].paired = true;
-            devices[deviceId].pairedAt = new Date().toISOString();
-            saveDevices();
-
-            // Publier la découverte Home Assistant
-            if (mqttHelper && mqttHelper.connected) {
-                mqttHelper.publishSwitchDiscovery({ ...devices[deviceId], id: deviceId });
-            }
-
-            log('info', `✅ Appairage confirmé pour ${device.name}`);
-            res.json({
-                status: 'success',
-                message: 'Appairage confirmé avec succès',
-                device: devices[deviceId]
-            });
-        } else {
-            log('info', `⚠️ Appairage non confirmé pour ${device.name}`);
-            res.json({
-                status: 'success',
-                message: 'Appairage non confirmé',
-                device: devices[deviceId]
+        if (!lighting2Handler) {
+            return res.status(500).json({
+                status: 'error',
+                error: 'RFXCOM non initialisé'
             });
         }
+
+        // Envoyer OFF pour le désappairage (désappairage = action OFF)
+        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
+        lighting2Handler.switchOff(deviceIdFormatted, (error) => {
+            if (error) {
+                log('error', `❌ Erreur lors du désappairage:`, error);
+                return res.status(500).json({
+                    status: 'error',
+                    error: error.message
+                });
+            }
+
+            log('info', `✅ Commande de désappairage (OFF) envoyée pour ${device.name}`);
+
+            // Marquer comme désappairé
+            devices[deviceId].paired = false;
+            devices[deviceId].pairingSent = false;
+            if (devices[deviceId].pairedAt) {
+                delete devices[deviceId].pairedAt;
+            }
+            saveDevices();
+
+            res.json({
+                status: 'success',
+                message: 'Désappairage effectué. L\'appareil ne répondra plus aux commandes.',
+                device: devices[deviceId]
+            });
+        });
     } catch (error) {
-        log('error', `❌ Erreur lors de la confirmation de l'appairage:`, error);
+        log('error', `❌ Erreur lors du désappairage:`, error);
         res.status(500).json({
             status: 'error',
             error: error.message
@@ -1356,13 +1431,18 @@ const server = app.listen(API_PORT, '0.0.0.0', (err) => {
     log('info', `   GET  /api/devices - Liste des appareils`);
     log('info', `   GET  /api/devices/:id - Obtenir un appareil`);
     log('info', `   POST /api/devices/arc - Ajouter un appareil ARC`);
-    log('info', `   POST /api/devices/arc/pair - Envoyer commande d'appairage ARC`);
-    log('info', `   POST /api/devices/arc/confirm-pair - Confirmer l'appairage ARC`);
+    log('info', `   POST /api/devices/arc/pair - Appairer un appareil ARC (envoie ON)`);
+    log('info', `   POST /api/devices/arc/:id/unpair - Désappairer un appareil ARC (envoie OFF)`);
     log('info', `   POST /api/devices/arc/:id/on - Ouvrir/Monter un appareil ARC`);
     log('info', `   POST /api/devices/arc/:id/off - Fermer/Descendre un appareil ARC`);
     log('info', `   POST /api/devices/arc/:id/stop - Arrêter un appareil ARC`);
     log('info', `   POST /api/devices/arc/:id/up - Alias pour ON`);
     log('info', `   POST /api/devices/arc/:id/down - Alias pour OFF`);
+    log('info', `   POST /api/devices/ac - Ajouter une prise AC`);
+    log('info', `   POST /api/devices/ac/pair - Appairer une prise AC (envoie ON)`);
+    log('info', `   POST /api/devices/ac/:id/unpair - Désappairer une prise AC (envoie OFF)`);
+    log('info', `   POST /api/devices/ac/:id/on - Allumer une prise AC`);
+    log('info', `   POST /api/devices/ac/:id/off - Éteindre une prise AC`);
     log('info', `   DELETE /api/devices/:id - Supprimer un appareil`);
 
     // Vérifier que le serveur écoute bien
