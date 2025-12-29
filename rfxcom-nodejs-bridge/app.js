@@ -1235,7 +1235,17 @@ app.post('/api/devices/ac', (req, res) => {
         let finalDeviceId = deviceId;
         let finalUnitCode = unitCode;
 
-        if (!finalDeviceId || finalDeviceId === '' || finalUnitCode === undefined || finalUnitCode === null || finalUnitCode === '') {
+        // Vérifier si les valeurs sont vraiment fournies
+        // Pour deviceId: doit être une chaîne non vide
+        const hasDeviceId = finalDeviceId !== undefined && finalDeviceId !== null && String(finalDeviceId).trim() !== '';
+        // Pour unitCode: doit être un nombre valide (0 est valide, donc on vérifie que ce n'est pas undefined/null/chaîne vide)
+        const hasUnitCode = finalUnitCode !== undefined && finalUnitCode !== null && String(finalUnitCode).trim() !== '';
+
+        log('info', `🔍 Vérification des valeurs fournies: deviceId="${finalDeviceId}" (hasDeviceId=${hasDeviceId}), unitCode="${finalUnitCode}" (hasUnitCode=${hasUnitCode})`);
+
+        // Si l'un ou l'autre est manquant, générer les deux
+        if (!hasDeviceId || !hasUnitCode) {
+            log('info', `🔍 Génération automatique nécessaire (deviceId manquant: ${!hasDeviceId}, unitCode manquant: ${!hasUnitCode})`);
             const freeCode = findFreeAcCode();
             if (!freeCode) {
                 return res.status(400).json({
@@ -1243,9 +1253,15 @@ app.post('/api/devices/ac', (req, res) => {
                     error: 'Aucun code libre disponible'
                 });
             }
-            finalDeviceId = freeCode.deviceId;
-            finalUnitCode = freeCode.unitCode;
-            log('info', `🔍 Codes générés automatiquement: Device ID ${finalDeviceId}, Unit Code ${finalUnitCode}`);
+            // Utiliser les valeurs fournies si disponibles, sinon utiliser les valeurs générées
+            finalDeviceId = hasDeviceId ? String(finalDeviceId).trim().toUpperCase() : freeCode.deviceId;
+            finalUnitCode = hasUnitCode ? (typeof finalUnitCode === 'number' ? finalUnitCode : parseInt(finalUnitCode)) : freeCode.unitCode;
+            log('info', `🔍 Codes finaux: Device ID ${finalDeviceId}, Unit Code ${finalUnitCode}`);
+        } else {
+            // Normaliser les valeurs fournies
+            finalDeviceId = String(finalDeviceId).trim().toUpperCase();
+            finalUnitCode = typeof finalUnitCode === 'number' ? finalUnitCode : parseInt(finalUnitCode);
+            log('info', `✅ Utilisation des valeurs fournies: Device ID ${finalDeviceId}, Unit Code ${finalUnitCode}`);
         }
 
         // Normaliser le deviceId (enlever 0x si présent, mettre en majuscules)

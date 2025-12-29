@@ -394,13 +394,25 @@
                 };
             } else if (deviceType === 'AC') {
                 endpoint = '/api/devices/ac';
-                const deviceId = formData.get('deviceId');
-                const unitCode = formData.get('unitCode');
+                const deviceIdRaw = formData.get('deviceId');
+                const unitCodeRaw = formData.get('unitCode');
+                
+                // Traiter deviceId: enlever les espaces, convertir en majuscules
+                const deviceId = deviceIdRaw && deviceIdRaw.trim() !== '' ? deviceIdRaw.trim().toUpperCase() : undefined;
+                
+                // Traiter unitCode: 0 est une valeur valide, donc on vérifie explicitement null/undefined/chaîne vide
+                let unitCode = undefined;
+                if (unitCodeRaw !== null && unitCodeRaw !== undefined && unitCodeRaw !== '') {
+                    const parsed = parseInt(unitCodeRaw);
+                    if (!isNaN(parsed) && parsed >= 0 && parsed <= 16) {
+                        unitCode = parsed;
+                    }
+                }
+                
                 data = {
                     name: formData.get('name'),
-                    // Envoyer undefined si vide pour génération automatique
-                    deviceId: deviceId && deviceId.trim() !== '' ? deviceId : undefined,
-                    unitCode: unitCode && unitCode.trim() !== '' ? parseInt(unitCode) : undefined
+                    deviceId: deviceId,
+                    unitCode: unitCode
                 };
             } else {
                 showAlert('❌ Type d\'appareil non reconnu', 'error');
@@ -689,8 +701,15 @@
             try {
                 const response = await fetch(API_BASE + '/api/devices');
                 const result = await response.json();
-                if (result.status === 'success') {
-                    return result.devices || [];
+                if (result.status === 'success' && result.devices) {
+                    // Convertir l'objet devices en tableau avec l'ID comme propriété
+                    return Object.keys(result.devices).map(deviceId => {
+                        const device = result.devices[deviceId];
+                        return {
+                            ...device,
+                            id: deviceId // Ajouter l'ID comme propriété
+                        };
+                    });
                 }
                 return [];
             } catch (error) {
@@ -703,8 +722,14 @@
         async function renameDevice(deviceId) {
             try {
                 // Récupérer le nom actuel de l'appareil
-                const devices = await fetchDevices();
-                const device = devices.find(d => {
+                const devicesArray = await fetchDevices();
+                // Vérifier que c'est bien un tableau
+                if (!Array.isArray(devicesArray)) {
+                    console.error('fetchDevices() n\'a pas retourné un tableau:', devicesArray);
+                    showAlert('❌ Erreur lors de la récupération des appareils', 'error');
+                    return;
+                }
+                const device = devicesArray.find(d => {
                     const id = d.id || (d.type === 'ARC' ? `ARC_${d.houseCode}_${d.unitCode}` : `AC_${d.deviceId}_${d.unitCode}`);
                     return id === deviceId;
                 });
