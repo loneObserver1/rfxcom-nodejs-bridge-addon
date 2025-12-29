@@ -684,6 +684,21 @@
             }
         }
 
+        // Fonction helper pour récupérer les appareils
+        async function fetchDevices() {
+            try {
+                const response = await fetch(API_BASE + '/api/devices');
+                const result = await response.json();
+                if (result.status === 'success') {
+                    return result.devices || [];
+                }
+                return [];
+            } catch (error) {
+                console.error('Erreur lors de la récupération des appareils:', error);
+                return [];
+            }
+        }
+
         // Renommer un appareil
         async function renameDevice(deviceId) {
             try {

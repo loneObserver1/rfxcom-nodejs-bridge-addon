@@ -369,8 +369,22 @@ function initializeRFXCOMAsync() {
             if (error) {
                 log('error', `❌ Erreur lors de l'initialisation RFXCOM:`, error);
                 log('warn', `⚠️ Le serveur continue sans RFXCOM, vous pouvez réessayer plus tard`);
+                rfxtrx = null;
             } else {
                 log('info', `✅ RFXCOM initialisé avec succès sur ${SERIAL_PORT}`);
+
+                // Gérer les erreurs de connexion série
+                rfxtrx.on('error', (err) => {
+                    log('error', `❌ Erreur RFXCOM: ${err.message}`);
+                    // Ne pas fermer automatiquement, laisser l'utilisateur gérer
+                });
+                
+                rfxtrx.on('disconnect', () => {
+                    log('warn', '⚠️ RFXCOM déconnecté');
+                    rfxtrx = null;
+                    lighting1Handler = null;
+                    lighting2Handler = null;
+                });
 
                 // Créer le handler pour Lighting1 (ARC, etc.)
                 lighting1Handler = new rfxcom.Lighting1(rfxtrx, rfxcom.lighting1.ARC);
@@ -467,6 +481,28 @@ function initializeRFXCOMAsync() {
 // L'initialisation RFXCOM sera démarrée après le démarrage du serveur
 // (voir plus bas dans le code, après app.listen)
 
+// Fonction pour fermer proprement RFXCOM
+function closeRFXCOM() {
+    if (rfxtrx) {
+        try {
+            log('info', '🔌 Fermeture du port série RFXCOM...');
+            // Retirer les listeners pour éviter les erreurs
+            rfxtrx.removeAllListeners('error');
+            rfxtrx.removeAllListeners('disconnect');
+            rfxtrx.removeAllListeners('receive');
+            // Fermer le port série
+            rfxtrx.close();
+            log('info', '✅ Port série RFXCOM fermé');
+        } catch (err) {
+            log('warn', `⚠️ Erreur lors de la fermeture du port série: ${err.message}`);
+        } finally {
+            rfxtrx = null;
+            lighting1Handler = null;
+            lighting2Handler = null;
+        }
+    }
+}
+
 // Gérer l'arrêt propre
 process.on('SIGTERM', () => {
     log('info', '🛑 Arrêt du module RFXCOM...');
@@ -474,14 +510,11 @@ process.on('SIGTERM', () => {
     if (mqttHelper) {
         mqttHelper.disconnect();
     }
-    if (rfxtrx) {
-        try {
-            rfxtrx.close();
-        } catch (err) {
-            log('warn', `⚠️ Erreur lors de la fermeture: ${err.message}`);
-        }
-    }
-    process.exit(0);
+    closeRFXCOM();
+    // Attendre un peu pour que la fermeture se termine proprement
+    setTimeout(() => {
+        process.exit(0);
+    }, 500);
 });
 
 process.on('SIGINT', () => {
@@ -490,15 +523,20 @@ process.on('SIGINT', () => {
     if (mqttHelper) {
         mqttHelper.disconnect();
     }
-    if (rfxtrx) {
-        try {
-            rfxtrx.close();
-        } catch (err) {
-            log('warn', `⚠️ Erreur lors de la fermeture: ${err.message}`);
-        }
-    }
-    process.exit(0);
+    closeRFXCOM();
+    // Attendre un peu pour que la fermeture se termine proprement
+    setTimeout(() => {
+        process.exit(0);
+    }, 500);
 });
+
+// Gérer les erreurs non capturées pour éviter les crashes
+process.on('uncaughtException', (error) => {
+    log('error', `❌ Exception non capturée: ${error.message}`);
+    log('error', `   Stack: ${error.stack}`);
+    // Ne pas arrêter le processus, juste logger
+});
+
 
 // L'initialisation RFXCOM est maintenant asynchrone et ne bloque plus le démarrage
 
