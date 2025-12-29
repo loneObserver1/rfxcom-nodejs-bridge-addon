@@ -136,6 +136,390 @@ function findFreeArcCode() {
     return null;
 }
 
+// Interface web HTML
+function getWebInterface() {
+    return `<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RFXCOM Node.js Bridge - Gestion des appareils</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 10px;
+        }
+        .content {
+            padding: 30px;
+        }
+        .section {
+            margin-bottom: 40px;
+        }
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        input, select, button {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .devices-list {
+            display: grid;
+            gap: 15px;
+        }
+        .device-card {
+            background: #f8f9fa;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .device-info h3 {
+            color: #333;
+            margin-bottom: 8px;
+        }
+        .device-info p {
+            color: #666;
+            font-size: 14px;
+        }
+        .device-actions {
+            display: flex;
+            gap: 10px;
+        }
+        .btn-small {
+            padding: 8px 16px;
+            width: auto;
+            font-size: 14px;
+        }
+        .btn-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        .btn-success {
+            background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .alert-success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .alert-error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .alert-info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .status-paired {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-unpaired {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .loading {
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎛️ RFXCOM Node.js Bridge</h1>
+            <p>Gestion des appareils RFXCOM</p>
+        </div>
+        <div class="content">
+            <div id="alerts"></div>
+            
+            <div class="section">
+                <h2>➕ Ajouter un appareil ARC</h2>
+                <form id="addDeviceForm">
+                    <div class="form-group">
+                        <label for="deviceName">Nom de l'appareil *</label>
+                        <input type="text" id="deviceName" name="name" required placeholder="Ex: Volet Salon">
+                    </div>
+                    <div class="form-group">
+                        <label for="houseCode">House Code (optionnel - laissé vide pour auto)</label>
+                        <select id="houseCode" name="houseCode">
+                            <option value="">Auto</option>
+                            ${'ABCDEFGHIJKLMNOP'.split('').map(c => `<option value="${c}">${c}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="unitCode">Unit Code (optionnel - laissé vide pour auto)</label>
+                        <input type="number" id="unitCode" name="unitCode" min="1" max="16" placeholder="1-16">
+                    </div>
+                    <button type="submit">Créer l'appareil</button>
+                </form>
+            </div>
+            
+            <div class="section">
+                <h2>📋 Liste des appareils</h2>
+                <div id="devicesList" class="devices-list">
+                    <div class="loading">Chargement...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        const API_BASE = window.location.origin;
+        
+        // Charger la liste des appareils
+        async function loadDevices() {
+            try {
+                const response = await fetch(API_BASE + '/api/devices');
+                const data = await response.json();
+                displayDevices(data.devices || {});
+            } catch (error) {
+                showAlert('Erreur lors du chargement des appareils: ' + error.message, 'error');
+                document.getElementById('devicesList').innerHTML = '<div class="alert alert-error">Erreur de chargement</div>';
+            }
+        }
+        
+        // Afficher les appareils
+        function displayDevices(devices) {
+            const list = document.getElementById('devicesList');
+            const deviceIds = Object.keys(devices);
+            
+            if (deviceIds.length === 0) {
+                list.innerHTML = '<div class="alert alert-info">Aucun appareil enregistré</div>';
+                return;
+            }
+            
+            list.innerHTML = deviceIds.map(deviceId => {
+                const device = devices[deviceId];
+                const statusClass = device.paired ? 'status-paired' : 'status-unpaired';
+                const statusText = device.paired ? 'Appairé' : 'Non appairé';
+                
+                return \`
+                    <div class="device-card">
+                        <div class="device-info">
+                            <h3>\${device.name}</h3>
+                            <p>
+                                Type: \${device.type} | 
+                                ID: \${deviceId} | 
+                                <span class="status \${statusClass}">\${statusText}</span>
+                            </p>
+                            \${device.type === 'ARC' ? \`<p>House Code: \${device.houseCode} | Unit Code: \${device.unitCode}</p>\` : ''}
+                        </div>
+                        <div class="device-actions">
+                            \${device.type === 'ARC' && !device.paired ? \`
+                                <button class="btn-small btn-success" onclick="pairDevice('\${deviceId}')">Appairer</button>
+                            \` : ''}
+                            \${device.type === 'ARC' ? \`
+                                <button class="btn-small" onclick="testDevice('\${deviceId}', 'on')">Test ON</button>
+                                <button class="btn-small" onclick="testDevice('\${deviceId}', 'off')">Test OFF</button>
+                            \` : ''}
+                            <button class="btn-small btn-danger" onclick="deleteDevice('\${deviceId}')">Supprimer</button>
+                        </div>
+                    </div>
+                \`;
+            }).join('');
+        }
+        
+        // Ajouter un appareil
+        document.getElementById('addDeviceForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                name: formData.get('name'),
+                houseCode: formData.get('houseCode') || undefined,
+                unitCode: formData.get('unitCode') ? parseInt(formData.get('unitCode')) : undefined
+            };
+            
+            try {
+                const response = await fetch(API_BASE + '/api/devices/arc', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    showAlert(\`✅ \${result.message}\`, 'success');
+                    e.target.reset();
+                    loadDevices();
+                } else {
+                    showAlert('❌ ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur: ' + error.message, 'error');
+            }
+        });
+        
+        // Appairer un appareil
+        async function pairDevice(deviceId) {
+            if (!confirm('Mettez l\\'appareil en mode appairage, puis cliquez sur OK')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(API_BASE + '/api/devices/arc/pair', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId })
+                });
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    if (confirm('L\\'appareil a-t-il bien répondu ?')) {
+                        const confirmResponse = await fetch(API_BASE + '/api/devices/arc/confirm-pair', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ deviceId, confirmed: true })
+                        });
+                        const confirmResult = await confirmResponse.json();
+                        showAlert(confirmResult.message || '✅ Appairage confirmé', 'success');
+                        loadDevices();
+                    }
+                } else {
+                    showAlert('❌ ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur: ' + error.message, 'error');
+            }
+        }
+        
+        // Tester un appareil
+        async function testDevice(deviceId, command) {
+            try {
+                const response = await fetch(API_BASE + '/api/devices/arc/test', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ deviceId, command })
+                });
+                
+                const result = await response.json();
+                showAlert(result.message || \`Commande \${command} envoyée\`, result.status === 'success' ? 'success' : 'error');
+            } catch (error) {
+                showAlert('Erreur: ' + error.message, 'error');
+            }
+        }
+        
+        // Supprimer un appareil
+        async function deleteDevice(deviceId) {
+            if (!confirm('Êtes-vous sûr de vouloir supprimer cet appareil ?')) {
+                return;
+            }
+            
+            try {
+                const response = await fetch(API_BASE + '/api/devices/' + encodeURIComponent(deviceId), {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                showAlert(result.message || 'Appareil supprimé', 'success');
+                loadDevices();
+            } catch (error) {
+                showAlert('Erreur: ' + error.message, 'error');
+            }
+        }
+        
+        // Afficher une alerte
+        function showAlert(message, type) {
+            const alerts = document.getElementById('alerts');
+            const alert = document.createElement('div');
+            alert.className = \`alert alert-\${type}\`;
+            alert.textContent = message;
+            alerts.appendChild(alert);
+            
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+        
+        // Charger au démarrage
+        loadDevices();
+        setInterval(loadDevices, 5000); // Rafraîchir toutes les 5 secondes
+    </script>
+</body>
+</html>`;
+}
+
 console.log(`🚀 RFXCOM Node.js Bridge add-on démarré`);
 log('info', `📡 Port série configuré: ${SERIAL_PORT}`);
 log('info', `📝 Niveau de log: ${LOG_LEVEL}`);
@@ -447,6 +831,11 @@ const server = http.createServer(async (req, res) => {
     const path = parsedUrl.pathname;
     const method = req.method;
 
+    // Log des requêtes API (sauf pour l'interface web)
+    if (path.startsWith('/api/')) {
+        log('info', `📥 ${method} ${path}`);
+    }
+
     // Health check
     if (path === '/health' && method === 'GET') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -488,14 +877,23 @@ const server = http.createServer(async (req, res) => {
         return;
     }
 
+    // Interface web
+    if (path === '/' || path === '/index.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+        res.end(getWebInterface());
+        return;
+    }
+
     // Ajouter un appareil ARC
     if (path === '/api/devices/arc' && method === 'POST') {
         let body = '';
         req.on('data', (chunk) => { body += chunk.toString(); });
         req.on('end', () => {
             try {
+                log('info', `📥 Requête reçue pour ajouter un appareil ARC`);
                 const data = JSON.parse(body);
                 const { name, houseCode, unitCode } = data;
+                log('info', `📝 Données reçues: name="${name}", houseCode="${houseCode || 'auto'}", unitCode="${unitCode || 'auto'}"`);
                 
                 if (!name) {
                     res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -546,10 +944,14 @@ const server = http.createServer(async (req, res) => {
                 };
                 
                 saveDevices();
+                log('info', `✅ Appareil ARC créé: ${name} (${id}) - House code: ${finalHouseCode}, Unit code: ${finalUnitCode}`);
                 
                 // Publier la découverte Home Assistant
-                if (mqttHelper) {
+                if (mqttHelper && mqttHelper.connected) {
                     mqttHelper.publishCoverDiscovery({ ...devices[id], id: id });
+                    log('info', `📡 Entité Home Assistant créée pour ${name}`);
+                } else {
+                    log('warn', `⚠️ MQTT non connecté, l'entité Home Assistant sera créée lors de la prochaine connexion`);
                 }
                 
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -814,7 +1216,9 @@ const server = http.createServer(async (req, res) => {
 // Démarrer le serveur HTTP
 server.listen(API_PORT, '0.0.0.0', () => {
     log('info', `🌐 Serveur API démarré sur le port ${API_PORT}`);
+    log('info', `🌐 Interface web disponible sur http://localhost:${API_PORT}/`);
     log('info', `📡 Endpoints disponibles:`);
+    log('info', `   GET  / - Interface web de gestion des appareils`);
     log('info', `   GET  /health - Health check`);
     log('info', `   GET  /api/devices - Liste des appareils`);
     log('info', `   GET  /api/devices/:id - Obtenir un appareil`);
