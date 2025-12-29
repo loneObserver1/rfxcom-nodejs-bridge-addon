@@ -68,8 +68,8 @@ async function main() {
     console.log('='.repeat(80));
     console.log();
     
-    const deviceId = '02382C82';
-    const unitCode = 2;
+    const deviceId = 'A1B2C3';
+    const unitCode = 5;
     const deviceIdFormatted = `0x${deviceId}/${unitCode}`;
     
     console.log('🎯 Configuration:');

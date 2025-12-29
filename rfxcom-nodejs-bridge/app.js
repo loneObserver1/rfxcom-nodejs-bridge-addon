@@ -1493,6 +1493,55 @@ app.post('/api/devices/ac/:id/off', (req, res) => {
     }
 });
 
+// Renommer un appareil
+app.put('/api/devices/:id/rename', (req, res) => {
+    try {
+        const deviceId = req.params.id;
+        const { name } = req.body;
+
+        if (!devices[deviceId]) {
+            return res.status(404).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        if (!name || name.trim() === '') {
+            return res.status(400).json({
+                status: 'error',
+                error: 'Le nom est requis'
+            });
+        }
+
+        const oldName = devices[deviceId].name;
+        devices[deviceId].name = name.trim();
+        saveDevices();
+
+        log('info', `✅ Appareil renommé: ${oldName} → ${name}`);
+
+        // Mettre à jour la découverte Home Assistant avec le nouveau nom
+        if (mqttHelper && mqttHelper.connected) {
+            if (devices[deviceId].type === 'ARC') {
+                mqttHelper.publishCoverDiscovery({ ...devices[deviceId], id: deviceId });
+            } else if (devices[deviceId].type === 'AC') {
+                mqttHelper.publishSwitchDiscovery({ ...devices[deviceId], id: deviceId });
+            }
+        }
+
+        res.json({
+            status: 'success',
+            message: 'Appareil renommé avec succès',
+            device: devices[deviceId]
+        });
+    } catch (error) {
+        log('error', `❌ Erreur lors du renommage:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
 // Supprimer un appareil
 app.delete('/api/devices/:id', (req, res) => {
     const deviceId = req.params.id;
@@ -1577,6 +1626,7 @@ const server = app.listen(API_PORT, '0.0.0.0', (err) => {
     log('info', `   POST /api/devices/ac/:id/unpair - Désappairer une prise AC (envoie OFF)`);
     log('info', `   POST /api/devices/ac/:id/on - Allumer une prise AC`);
     log('info', `   POST /api/devices/ac/:id/off - Éteindre une prise AC`);
+    log('info', `   PUT /api/devices/:id/rename - Renommer un appareil`);
     log('info', `   DELETE /api/devices/:id - Supprimer un appareil`);
 
     // Vérifier que le serveur écoute bien

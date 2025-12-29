@@ -1,6 +1,6 @@
 name: "RFXCOM Node.js Bridge"
 description: "Bridge Node.js pour la communication RFXCOM via le package node-rfxcom. Nécessite l'add-on MQTT (Mosquitto) pour créer les entités Home Assistant."
-version: "2.0.2"
+version: "2.0.3"
 slug: "rfxcom-nodejs-bridge"
 init: false
 startup: services

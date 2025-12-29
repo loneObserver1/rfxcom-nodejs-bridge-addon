@@ -121,6 +121,9 @@
         .btn-success {
             background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
         }
+        .btn-info {
+            background: linear-gradient(135deg, #17a2b8 0%, #138496 100%);
+        }
         .alert {
             padding: 15px;
             border-radius: 8px;
@@ -330,6 +333,7 @@
                                 <button class="btn-small btn-success" onclick="sendAcCommand('${deviceId}', 'on')">ON</button>
                                 <button class="btn-small" onclick="sendAcCommand('${deviceId}', 'off')">OFF</button>
                             ` : ''}
+                            <button class="btn-small btn-info" onclick="renameDevice('${deviceId}')">Renommer</button>
                             <button class="btn-small btn-danger" onclick="deleteDevice('${deviceId}')">Supprimer</button>
                         </div>
                     </div>
@@ -674,6 +678,53 @@
                     showAlert(`✅ ${result.message}`, 'success');
                 } else {
                     showAlert(`❌ ${result.error}`, 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur: ' + error.message, 'error');
+            }
+        }
+
+        // Renommer un appareil
+        async function renameDevice(deviceId) {
+            try {
+                // Récupérer le nom actuel de l'appareil
+                const devices = await fetchDevices();
+                const device = devices.find(d => {
+                    const id = d.id || (d.type === 'ARC' ? `ARC_${d.houseCode}_${d.unitCode}` : `AC_${d.deviceId}_${d.unitCode}`);
+                    return id === deviceId;
+                });
+
+                if (!device) {
+                    showAlert('❌ Appareil non trouvé', 'error');
+                    return;
+                }
+
+                const currentName = device.name || deviceId;
+                const newName = prompt(`Renommer l'appareil "${currentName}" :`, currentName);
+
+                if (newName === null) {
+                    return; // L'utilisateur a annulé
+                }
+
+                if (newName.trim() === '') {
+                    showAlert('❌ Le nom ne peut pas être vide', 'error');
+                    return;
+                }
+
+                const encodedDeviceId = encodeURIComponent(deviceId);
+                const response = await fetch(`${API_BASE}/api/devices/${encodedDeviceId}/rename`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: newName.trim() })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    showAlert(`✅ Appareil renommé en "${newName}"`, 'success');
+                    await loadDevices(); // Recharger la liste des appareils
+                } else {
+                    showAlert('❌ ' + result.error, 'error');
                 }
             } catch (error) {
                 showAlert('Erreur: ' + error.message, 'error');
