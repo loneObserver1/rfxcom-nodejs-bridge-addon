@@ -12,6 +12,7 @@ class MQTTHelper {
         this.shouldReconnect = true;
         
         // Récupérer les paramètres depuis les variables d'environnement ou les options
+        // Par défaut, utiliser core-mosquitto (nom du service Docker de l'add-on Mosquitto broker)
         this.host = options.host || process.env.MQTT_HOST || 'core-mosquitto';
         this.port = options.port || parseInt(process.env.MQTT_PORT || '1883');
         this.username = options.username || process.env.MQTT_USER || '';
@@ -132,16 +133,21 @@ class MQTTHelper {
         });
 
         this.client.on('reconnect', () => {
+            // Incrémenter le compteur lors de la reconnexion
+            if (this.connectionAttempts < this.maxConnectionAttempts) {
+                this.connectionAttempts++;
+            }
+            
             if (this.connectionAttempts >= this.maxConnectionAttempts) {
                 // Arrêter la reconnexion si on a atteint le max
                 this.log('error', `❌ Arrêt de la reconnexion automatique après ${this.maxConnectionAttempts} tentatives`);
+                this.shouldReconnect = false;
                 if (this.client) {
                     this.client.end(true); // Forcer la fermeture
                     this.client = null;
                 }
-                this.shouldReconnect = false;
             } else {
-                this.log('info', `🔄 Reconnexion au broker MQTT... (tentative ${this.connectionAttempts + 1}/${this.maxConnectionAttempts})`);
+                this.log('info', `🔄 Reconnexion au broker MQTT... (tentative ${this.connectionAttempts}/${this.maxConnectionAttempts})`);
             }
         });
     }

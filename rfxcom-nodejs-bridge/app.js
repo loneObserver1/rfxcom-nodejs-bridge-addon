@@ -166,89 +166,91 @@ let rfxtrx = null;
 let lighting1Handler = null;
 let mqttHelper = null;
 
-// Initialiser MQTT
-log('info', '🔧 Initialisation de la connexion MQTT...');
-log('info', '📋 Prérequis: L\'add-on MQTT (Mosquitto) doit être installé et démarré dans Home Assistant');
-
-// Récupérer les paramètres MQTT depuis les variables d'environnement
+// Récupérer les paramètres MQTT depuis les variables d'environnement (pour utilisation après initialisation RFXCOM)
 const MQTT_HOST = process.env.MQTT_HOST || '';
 const MQTT_PORT = parseInt(process.env.MQTT_PORT || '1883');
 const MQTT_USER = process.env.MQTT_USER || '';
 const MQTT_PASSWORD = process.env.MQTT_PASSWORD || '';
 
-if (MQTT_HOST) {
-    log('info', `📡 Configuration MQTT: ${MQTT_HOST}:${MQTT_PORT}`);
-    if (MQTT_USER) {
-        log('info', `   Authentification: ${MQTT_USER}`);
-    }
-} else {
-    log('warn', '⚠️ Aucun host MQTT configuré, utilisation des valeurs par défaut');
-}
+// Fonction pour initialiser MQTT (appelée après l'initialisation RFXCOM)
+function initializeMQTT() {
+    log('info', '🔧 Initialisation de la connexion MQTT...');
+    log('info', '📋 Prérequis: L\'add-on MQTT (Mosquitto) doit être installé et démarré dans Home Assistant');
 
-try {
-    mqttHelper = new MQTTHelper(log, {
-        host: MQTT_HOST || 'core-mosquitto',
-        port: MQTT_PORT,
-        username: MQTT_USER,
-        password: MQTT_PASSWORD
-    });
-    
-    // Gérer les messages MQTT (commandes depuis Home Assistant)
-    mqttHelper.setMessageHandler((topic, message) => {
-        log('debug', `📨 Message MQTT reçu: ${topic} -> ${message}`);
+    if (MQTT_HOST) {
+        log('info', `📡 Configuration MQTT: ${MQTT_HOST}:${MQTT_PORT}`);
+        if (MQTT_USER) {
+            log('info', `   Authentification: ${MQTT_USER}`);
+        }
+    } else {
+        log('info', `📡 Configuration MQTT: localhost:${MQTT_PORT} (par défaut)`);
+    }
+
+    try {
+        mqttHelper = new MQTTHelper(log, {
+            host: MQTT_HOST || 'core-mosquitto',
+            port: MQTT_PORT,
+            username: MQTT_USER,
+            password: MQTT_PASSWORD
+        });
         
-        // Format: rfxcom/cover/{deviceId}/set ou rfxcom/cover/{deviceId}/set_position
-        const parts = topic.split('/');
-        if (parts.length >= 4 && parts[0] === 'rfxcom' && parts[1] === 'cover') {
-            const deviceId = parts[2];
-            const commandType = parts[3];
+        // Gérer les messages MQTT (commandes depuis Home Assistant)
+        mqttHelper.setMessageHandler((topic, message) => {
+            log('debug', `📨 Message MQTT reçu: ${topic} -> ${message}`);
             
-            if (devices[deviceId] && devices[deviceId].type === 'ARC' && lighting1Handler) {
-                const device = devices[deviceId];
+            // Format: rfxcom/cover/{deviceId}/set ou rfxcom/cover/{deviceId}/set_position
+            const parts = topic.split('/');
+            if (parts.length >= 4 && parts[0] === 'rfxcom' && parts[1] === 'cover') {
+                const deviceId = parts[2];
+                const commandType = parts[3];
                 
-                if (commandType === 'set') {
-                    // Commandes: OPEN, CLOSE, STOP
-                    if (message === 'OPEN' || message === 'open') {
-                        lighting1Handler.switchOn(device.houseCode, device.unitCode, (error) => {
-                            if (error) {
-                                log('error', `❌ Erreur commande OPEN: ${error.message}`);
-                            } else {
-                                log('info', `✅ Commande OPEN envoyée à ${device.name}`);
-                                if (mqttHelper) {
-                                    mqttHelper.publishCoverState(deviceId, 'open');
+                if (devices[deviceId] && devices[deviceId].type === 'ARC' && lighting1Handler) {
+                    const device = devices[deviceId];
+                    
+                    if (commandType === 'set') {
+                        // Commandes: OPEN, CLOSE, STOP
+                        if (message === 'OPEN' || message === 'open') {
+                            lighting1Handler.switchOn(device.houseCode, device.unitCode, (error) => {
+                                if (error) {
+                                    log('error', `❌ Erreur commande OPEN: ${error.message}`);
+                                } else {
+                                    log('info', `✅ Commande OPEN envoyée à ${device.name}`);
+                                    if (mqttHelper) {
+                                        mqttHelper.publishCoverState(deviceId, 'open');
+                                    }
                                 }
-                            }
-                        });
-                    } else if (message === 'CLOSE' || message === 'close') {
-                        lighting1Handler.switchOff(device.houseCode, device.unitCode, (error) => {
-                            if (error) {
-                                log('error', `❌ Erreur commande CLOSE: ${error.message}`);
-                            } else {
-                                log('info', `✅ Commande CLOSE envoyée à ${device.name}`);
-                                if (mqttHelper) {
-                                    mqttHelper.publishCoverState(deviceId, 'closed');
+                            });
+                        } else if (message === 'CLOSE' || message === 'close') {
+                            lighting1Handler.switchOff(device.houseCode, device.unitCode, (error) => {
+                                if (error) {
+                                    log('error', `❌ Erreur commande CLOSE: ${error.message}`);
+                                } else {
+                                    log('info', `✅ Commande CLOSE envoyée à ${device.name}`);
+                                    if (mqttHelper) {
+                                        mqttHelper.publishCoverState(deviceId, 'closed');
+                                    }
                                 }
-                            }
-                        });
-                    } else if (message === 'STOP' || message === 'stop') {
-                        // Pour stop, on peut envoyer OFF
-                        lighting1Handler.switchOff(device.houseCode, device.unitCode, (error) => {
-                            if (error) {
-                                log('error', `❌ Erreur commande STOP: ${error.message}`);
-                            } else {
-                                log('info', `✅ Commande STOP envoyée à ${device.name}`);
-                            }
-                        });
+                            });
+                        } else if (message === 'STOP' || message === 'stop') {
+                            // Pour stop, on peut envoyer OFF
+                            lighting1Handler.switchOff(device.houseCode, device.unitCode, (error) => {
+                                if (error) {
+                                    log('error', `❌ Erreur commande STOP: ${error.message}`);
+                                } else {
+                                    log('info', `✅ Commande STOP envoyée à ${device.name}`);
+                                }
+                            });
+                        }
                     }
                 }
             }
-        }
-    });
-    
-    mqttHelper.connect();
-} catch (error) {
-    log('warn', `⚠️ Impossible d'initialiser MQTT: ${error.message}`);
-    log('warn', `⚠️ Les entités Home Assistant ne seront pas créées automatiquement`);
+        });
+        
+        mqttHelper.connect();
+    } catch (error) {
+        log('warn', `⚠️ Impossible d'initialiser MQTT: ${error.message}`);
+        log('warn', `⚠️ Les entités Home Assistant ne seront pas créées automatiquement`);
+    }
 }
 
 try {
@@ -278,7 +280,10 @@ try {
                 });
             }
             
+            log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
+            
             // Configurer la publication des entités après connexion MQTT
+            // (l'initialisation MQTT se fera après le démarrage du serveur HTTP)
             if (mqttHelper) {
                 mqttHelper.onConnect = () => {
                     setTimeout(() => {
@@ -292,8 +297,6 @@ try {
                     }, 1000);
                 };
             }
-            
-            log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
         }
     });
 
@@ -750,4 +753,10 @@ server.listen(API_PORT, '0.0.0.0', () => {
     log('info', `   POST /api/devices/arc/confirm-pair - Confirmer l'appairage ARC`);
     log('info', `   POST /api/devices/arc/test - Tester un appareil ARC (on/off/up/down/stop)`);
     log('info', `   DELETE /api/devices/:id - Supprimer un appareil`);
+    
+    // Initialiser MQTT après le démarrage du serveur HTTP
+    // (seulement si RFXCOM est déjà initialisé)
+    if (rfxtrx && lighting1Handler) {
+        initializeMQTT();
+    }
 });
