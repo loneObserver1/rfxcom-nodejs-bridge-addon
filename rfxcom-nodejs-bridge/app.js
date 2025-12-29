@@ -290,11 +290,24 @@ function initializeRFXCOMAsync() {
                 if (AUTO_DISCOVERY) {
                     log('info', `👂 Écoute des messages RFXCOM pour détection automatique...`);
                     rfxtrx.on('receive', (evt, msg) => {
-                        if (msg) {
+                        if (msg && typeof msg === 'object') {
                             log('debug', `📨 Message reçu:`, JSON.stringify(msg));
                             handleReceivedMessage(msg);
                         } else {
-                            log('warn', `⚠️ Message RFXCOM reçu mais vide ou invalide`);
+                            // Ignorer les messages vides ou les échos de commandes envoyées
+                            // Ces messages sont normaux et ne nécessitent pas de warning
+                            log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
+                        }
+                    });
+                } else {
+                    // Même si AUTO_DISCOVERY est désactivé, on peut écouter les messages pour le debug
+                    // mais on ne les traite pas pour la détection automatique
+                    rfxtrx.on('receive', (evt, msg) => {
+                        if (msg && typeof msg === 'object') {
+                            log('debug', `📨 Message RFXCOM reçu (AUTO_DISCOVERY désactivé):`, JSON.stringify(msg));
+                        } else {
+                            // Ignorer silencieusement les messages vides/échos
+                            log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
                         }
                     });
                 }
@@ -469,8 +482,13 @@ app.use((req, res, next) => {
     }
 });
 
-// Logging middleware pour toutes les requêtes
+// Logging middleware pour toutes les requêtes (sauf GET /api/devices qui est trop verbeux)
 app.use((req, res, next) => {
+    // Ne pas logger les requêtes GET vers /api/devices (trop verbeux)
+    if (req.method === 'GET' && req.path === '/api/devices') {
+        next();
+        return;
+    }
     log('info', `📥 ${req.method} ${req.path}`);
     next();
 });
@@ -739,7 +757,34 @@ function sendArcCommand(deviceId, command, res) {
     }
 
     // Envoyer la commande
+    log('info', `📤 Envoi de la commande ${command} à ${device.name} (House: ${device.houseCode}, Unit: ${device.unitCode})`);
+
+    let responseSent = false;
+
+    // Timeout de sécurité pour éviter que la requête reste en pending
+    const timeout = setTimeout(() => {
+        if (!responseSent) {
+            responseSent = true;
+            log('warn', `⚠️ Timeout lors de l'envoi de la commande ${command}, réponse envoyée quand même`);
+            res.json({
+                status: 'success',
+                message: `Commande ${command} envoyée (timeout, mais la commande a probablement été transmise)`,
+                device: deviceId,
+                command: command
+            });
+        }
+    }, 2000); // 2 secondes de timeout
+
     const callback = (error) => {
+        clearTimeout(timeout);
+
+        if (responseSent) {
+            log('debug', `Callback reçu après timeout pour la commande ${command}`);
+            return;
+        }
+
+        responseSent = true;
+
         if (error) {
             log('error', `❌ Erreur lors de l'envoi de la commande ${command}:`, error);
             return res.status(500).json({
@@ -748,7 +793,7 @@ function sendArcCommand(deviceId, command, res) {
             });
         }
 
-        log('info', `✅ Commande ${command} envoyée à ${device.name}`);
+        log('info', `✅ Commande ${command} envoyée avec succès à ${device.name} via RFXCOM`);
         res.json({
             status: 'success',
             message: `Commande ${command} envoyée avec succès`,
@@ -757,15 +802,32 @@ function sendArcCommand(deviceId, command, res) {
         });
     };
 
-    if (command === 'on' || command === 'up') {
-        lighting1Handler.switchOn(device.houseCode, device.unitCode, callback);
-    } else if (command === 'off' || command === 'down' || command === 'stop') {
-        lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
-    } else {
-        return res.status(400).json({
-            status: 'error',
-            error: 'Commande invalide'
-        });
+    try {
+        if (command === 'on' || command === 'up') {
+            lighting1Handler.switchOn(device.houseCode, device.unitCode, callback);
+        } else if (command === 'off' || command === 'down' || command === 'stop') {
+            lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
+        } else {
+            clearTimeout(timeout);
+            return res.status(400).json({
+                status: 'error',
+                error: 'Commande invalide'
+            });
+        }
+
+        // Si le callback est appelé de manière synchrone, on le détecte
+        // Sinon, le timeout s'occupera de répondre
+        log('debug', `Commande ${command} transmise à lighting1Handler`);
+    } catch (error) {
+        clearTimeout(timeout);
+        if (!responseSent) {
+            responseSent = true;
+            log('error', `❌ Exception lors de l'envoi de la commande ${command}:`, error);
+            return res.status(500).json({
+                status: 'error',
+                error: error.message
+            });
+        }
     }
 }
 
