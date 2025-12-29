@@ -171,7 +171,7 @@
         </div>
         <div class="content">
             <div id="alerts"></div>
-            
+
             <div class="section">
                 <h2>➕ Ajouter un appareil ARC</h2>
                 <form id="addDeviceForm">
@@ -208,7 +208,7 @@
                     <button type="submit">Créer l'appareil</button>
                 </form>
             </div>
-            
+
             <div class="section">
                 <h2>📋 Liste des appareils</h2>
                 <div id="devicesList" class="devices-list">
@@ -217,10 +217,10 @@
             </div>
         </div>
     </div>
-    
+
     <script>
         const API_BASE = window.location.origin;
-        
+
         // Charger la liste des appareils
         async function loadDevices() {
             try {
@@ -232,29 +232,29 @@
                 document.getElementById('devicesList').innerHTML = '<div class="alert alert-error">Erreur de chargement</div>';
             }
         }
-        
+
         // Afficher les appareils
         function displayDevices(devices) {
             const list = document.getElementById('devicesList');
             const deviceIds = Object.keys(devices);
-            
+
             if (deviceIds.length === 0) {
                 list.innerHTML = '<div class="alert alert-info">Aucun appareil enregistré</div>';
                 return;
             }
-            
+
             list.innerHTML = deviceIds.map(deviceId => {
                 const device = devices[deviceId];
                 const statusClass = device.paired ? 'status-paired' : 'status-unpaired';
                 const statusText = device.paired ? 'Appairé' : 'Non appairé';
-                
+
                 return `
                     <div class="device-card">
                         <div class="device-info">
                             <h3>${device.name}</h3>
                             <p>
-                                Type: ${device.type} | 
-                                ID: ${deviceId} | 
+                                Type: ${device.type} |
+                                ID: ${deviceId} |
                                 <span class="status ${statusClass}">${statusText}</span>
                             </p>
                             ${device.type === 'ARC' ? `<p>House Code: ${device.houseCode} | Unit Code: ${device.unitCode}</p>` : ''}
@@ -264,8 +264,9 @@
                                 <button class="btn-small btn-success" onclick="pairDevice('${deviceId}')">Appairer</button>
                             ` : ''}
                             ${device.type === 'ARC' ? `
-                                <button class="btn-small" onclick="testDevice('${deviceId}', 'on')">Test ON</button>
-                                <button class="btn-small" onclick="testDevice('${deviceId}', 'off')">Test OFF</button>
+                                <button class="btn-small btn-success" onclick="sendArcCommand('${deviceId}', 'on')">ON</button>
+                                <button class="btn-small" onclick="sendArcCommand('${deviceId}', 'off')">OFF</button>
+                                <button class="btn-small" onclick="sendArcCommand('${deviceId}', 'stop')">STOP</button>
                             ` : ''}
                             <button class="btn-small btn-danger" onclick="deleteDevice('${deviceId}')">Supprimer</button>
                         </div>
@@ -273,7 +274,7 @@
                 `;
             }).join('');
         }
-        
+
         // Ajouter un appareil
         document.getElementById('addDeviceForm').addEventListener('submit', async (e) => {
             e.preventDefault();
@@ -283,16 +284,16 @@
                 houseCode: formData.get('houseCode') || undefined,
                 unitCode: formData.get('unitCode') ? parseInt(formData.get('unitCode')) : undefined
             };
-            
+
             try {
                 const response = await fetch(API_BASE + '/api/devices/arc', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(data)
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.status === 'success') {
                     showAlert(`✅ ${result.message}`, 'success');
                     e.target.reset();
@@ -304,22 +305,22 @@
                 showAlert('Erreur: ' + error.message, 'error');
             }
         });
-        
+
         // Appairer un appareil
         async function pairDevice(deviceId) {
             if (!confirm('Mettez l\'appareil en mode appairage, puis cliquez sur OK')) {
                 return;
             }
-            
+
             try {
                 const response = await fetch(API_BASE + '/api/devices/arc/pair', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ deviceId })
                 });
-                
+
                 const result = await response.json();
-                
+
                 if (result.status === 'success') {
                     if (confirm('L\'appareil a-t-il bien répondu ?')) {
                         const confirmResponse = await fetch(API_BASE + '/api/devices/arc/confirm-pair', {
@@ -338,34 +339,41 @@
                 showAlert('Erreur: ' + error.message, 'error');
             }
         }
-        
-        // Tester un appareil
-        async function testDevice(deviceId, command) {
+
+        // Envoyer une commande ARC
+        async function sendArcCommand(deviceId, command) {
             try {
-                const response = await fetch(API_BASE + '/api/devices/arc/test', {
+                // Encoder l'ID de l'appareil pour l'URL (au cas où il contiendrait des caractères spéciaux)
+                const encodedDeviceId = encodeURIComponent(deviceId);
+                const endpoint = `${API_BASE}/api/devices/arc/${encodedDeviceId}/${command}`;
+
+                const response = await fetch(endpoint, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ deviceId, command })
+                    headers: { 'Content-Type': 'application/json' }
                 });
-                
+
                 const result = await response.json();
-                showAlert(result.message || `Commande ${command} envoyée`, result.status === 'success' ? 'success' : 'error');
+                if (result.status === 'success') {
+                    showAlert(`✅ ${result.message}`, 'success');
+                } else {
+                    showAlert(`❌ ${result.error}`, 'error');
+                }
             } catch (error) {
                 showAlert('Erreur: ' + error.message, 'error');
             }
         }
-        
+
         // Supprimer un appareil
         async function deleteDevice(deviceId) {
             if (!confirm('Êtes-vous sûr de vouloir supprimer cet appareil ?')) {
                 return;
             }
-            
+
             try {
                 const response = await fetch(API_BASE + '/api/devices/' + encodeURIComponent(deviceId), {
                     method: 'DELETE'
                 });
-                
+
                 const result = await response.json();
                 showAlert(result.message || 'Appareil supprimé', 'success');
                 loadDevices();
@@ -373,7 +381,7 @@
                 showAlert('Erreur: ' + error.message, 'error');
             }
         }
-        
+
         // Afficher une alerte
         function showAlert(message, type) {
             const alerts = document.getElementById('alerts');
@@ -381,12 +389,12 @@
             alert.className = `alert alert-${type}`;
             alert.textContent = message;
             alerts.appendChild(alert);
-            
+
             setTimeout(() => {
                 alert.remove();
             }, 5000);
         }
-        
+
         // Charger au démarrage
         loadDevices();
         setInterval(loadDevices, 5000); // Rafraîchir toutes les 5 secondes

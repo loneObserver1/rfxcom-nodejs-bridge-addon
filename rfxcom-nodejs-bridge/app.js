@@ -697,7 +697,7 @@ app.post('/api/devices/arc/confirm-pair', (req, res) => {
             log('info', `✅ Appairage confirmé pour ${device.name}`);
             res.json({
                 status: 'success',
-                message: 'Appairage confirmé. Utilisez /api/devices/arc/test pour tester ON/OFF.'
+                message: 'Appairage confirmé. Utilisez les endpoints /api/devices/arc/:id/on, /off, /stop pour contrôler l\'appareil.'
             });
         } else {
             res.json({
@@ -714,67 +714,119 @@ app.post('/api/devices/arc/confirm-pair', (req, res) => {
     }
 });
 
-// Tester un appareil ARC (ON/OFF)
-app.post('/api/devices/arc/test', (req, res) => {
-    try {
-        const { deviceId, command } = req.body;
+// Fonction helper pour envoyer une commande ARC
+function sendArcCommand(deviceId, command, res) {
+    if (!deviceId || !devices[deviceId]) {
+        return res.status(404).json({
+            status: 'error',
+            error: 'Appareil non trouvé'
+        });
+    }
 
-        if (!deviceId || !devices[deviceId]) {
-            return res.status(400).json({
-                status: 'error',
-                error: 'Appareil non trouvé'
-            });
-        }
+    const device = devices[deviceId];
+    if (device.type !== 'ARC') {
+        return res.status(400).json({
+            status: 'error',
+            error: 'Cet appareil n\'est pas de type ARC'
+        });
+    }
 
-        const device = devices[deviceId];
-        if (device.type !== 'ARC') {
-            return res.status(400).json({
-                status: 'error',
-                error: 'Cet appareil n\'est pas de type ARC'
-            });
-        }
+    if (!lighting1Handler) {
+        return res.status(500).json({
+            status: 'error',
+            error: 'RFXCOM non initialisé'
+        });
+    }
 
-        if (!['on', 'off', 'up', 'down', 'stop'].includes(command)) {
-            return res.status(400).json({
-                status: 'error',
-                error: 'Commande invalide. Utilisez: on, off, up, down, stop'
-            });
-        }
-
-        if (!lighting1Handler) {
+    // Envoyer la commande
+    const callback = (error) => {
+        if (error) {
+            log('error', `❌ Erreur lors de l'envoi de la commande ${command}:`, error);
             return res.status(500).json({
                 status: 'error',
-                error: 'RFXCOM non initialisé'
+                error: error.message
             });
         }
 
-        // Envoyer la commande
-        const callback = (error) => {
-            if (error) {
-                log('error', `❌ Erreur lors de l'envoi de la commande:`, error);
-                return res.status(500).json({
-                    status: 'error',
-                    error: error.message
-                });
-            }
+        log('info', `✅ Commande ${command} envoyée à ${device.name}`);
+        res.json({
+            status: 'success',
+            message: `Commande ${command} envoyée avec succès`,
+            device: deviceId,
+            command: command
+        });
+    };
 
-            log('info', `✅ Commande ${command} envoyée à ${device.name}`);
-            res.json({
-                status: 'success',
-                message: `Commande ${command} envoyée`
-            });
-        };
+    if (command === 'on' || command === 'up') {
+        lighting1Handler.switchOn(device.houseCode, device.unitCode, callback);
+    } else if (command === 'off' || command === 'down' || command === 'stop') {
+        lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
+    } else {
+        return res.status(400).json({
+            status: 'error',
+            error: 'Commande invalide'
+        });
+    }
+}
 
-        if (command === 'on' || command === 'up') {
-            lighting1Handler.switchOn(device.houseCode, device.unitCode, callback);
-        } else if (command === 'off' || command === 'down') {
-            lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
-        } else {
-            // Pour stop, on peut envoyer OFF
-            lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
-        }
+// Commandes ARC - ON (ouvrir/monter)
+app.post('/api/devices/arc/:id/on', (req, res) => {
+    try {
+        sendArcCommand(req.params.id, 'on', res);
     } catch (error) {
-        log('error', `❌ Erreur lors du test:`, error);
+        log('error', `❌ Erreur lors de l'envoi de la commande ON:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Commandes ARC - UP (alias pour ON)
+app.post('/api/devices/arc/:id/up', (req, res) => {
+    try {
+        sendArcCommand(req.params.id, 'up', res);
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'envoi de la commande UP:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Commandes ARC - OFF (fermer/descendre)
+app.post('/api/devices/arc/:id/off', (req, res) => {
+    try {
+        sendArcCommand(req.params.id, 'off', res);
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'envoi de la commande OFF:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Commandes ARC - DOWN (alias pour OFF)
+app.post('/api/devices/arc/:id/down', (req, res) => {
+    try {
+        sendArcCommand(req.params.id, 'down', res);
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'envoi de la commande DOWN:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Commandes ARC - STOP (arrêter)
+app.post('/api/devices/arc/:id/stop', (req, res) => {
+    try {
+        sendArcCommand(req.params.id, 'stop', res);
+    } catch (error) {
+        log('error', `❌ Erreur lors de l'envoi de la commande STOP:`, error);
         res.status(500).json({
             status: 'error',
             error: error.message
@@ -854,7 +906,11 @@ const server = app.listen(API_PORT, '0.0.0.0', (err) => {
     log('info', `   POST /api/devices/arc - Ajouter un appareil ARC`);
     log('info', `   POST /api/devices/arc/pair - Envoyer commande d'appairage ARC`);
     log('info', `   POST /api/devices/arc/confirm-pair - Confirmer l'appairage ARC`);
-    log('info', `   POST /api/devices/arc/test - Tester un appareil ARC (on/off/up/down/stop)`);
+    log('info', `   POST /api/devices/arc/:id/on - Ouvrir/Monter un appareil ARC`);
+    log('info', `   POST /api/devices/arc/:id/off - Fermer/Descendre un appareil ARC`);
+    log('info', `   POST /api/devices/arc/:id/stop - Arrêter un appareil ARC`);
+    log('info', `   POST /api/devices/arc/:id/up - Alias pour ON`);
+    log('info', `   POST /api/devices/arc/:id/down - Alias pour OFF`);
     log('info', `   DELETE /api/devices/:id - Supprimer un appareil`);
 
     // Vérifier que le serveur écoute bien
