@@ -215,7 +215,7 @@ function initializeMQTT() {
                     if (commandType === 'set') {
                         // Commandes: OPEN, CLOSE, STOP
                         if (message === 'OPEN' || message === 'open') {
-                            lighting1Handler.switchOn(device.houseCode, device.unitCode, (error) => {
+                            lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
                                 if (error) {
                                     log('error', `❌ Erreur commande OPEN: ${error.message}`);
                                 } else {
@@ -226,7 +226,7 @@ function initializeMQTT() {
                                 }
                             });
                         } else if (message === 'CLOSE' || message === 'close') {
-                            lighting1Handler.switchOff(device.houseCode, device.unitCode, (error) => {
+                            lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
                                 if (error) {
                                     log('error', `❌ Erreur commande CLOSE: ${error.message}`);
                                 } else {
@@ -237,8 +237,7 @@ function initializeMQTT() {
                                 }
                             });
                         } else if (message === 'STOP' || message === 'stop') {
-                            // Pour stop, on peut envoyer OFF
-                            lighting1Handler.switchOff(device.houseCode, device.unitCode, (error) => {
+                            lighting1Handler.stop(device.houseCode, device.unitCode, (error) => {
                                 if (error) {
                                     log('error', `❌ Erreur commande STOP: ${error.message}`);
                                 } else {
@@ -322,6 +321,23 @@ function initializeRFXCOMAsync() {
 
                 // Créer le handler pour Lighting1 (ARC, etc.)
                 lighting1Handler = new rfxcom.Lighting1(rfxtrx, rfxcom.lighting1.ARC);
+                
+                // Ajouter les méthodes wrapper pour ARC (UP/DOWN/STOP)
+                // car l'API rfxcom n'expose que switchOn, switchOff, chime
+                lighting1Handler.switchUp = function(houseCode, unitCode, callback) {
+                    // Pour ARC, switchOn (0x01) = UP (monter)
+                    return this.switchOn(`${houseCode}${unitCode}`, callback);
+                };
+                
+                lighting1Handler.switchDown = function(houseCode, unitCode, callback) {
+                    // Pour ARC, switchOff (0x00) = DOWN (descendre)
+                    return this.switchOff(`${houseCode}${unitCode}`, callback);
+                };
+                
+                lighting1Handler.stop = function(houseCode, unitCode, callback) {
+                    // Pour ARC, chime (0x07) peut être utilisé comme STOP
+                    return this.chime(`${houseCode}${unitCode}`, callback);
+                };
                 
                 // Créer le handler pour Lighting2 (AC, DIO Chacon, etc.)
                 lighting2Handler = new rfxcom.Lighting2(rfxtrx, rfxcom.lighting2.AC);
@@ -732,7 +748,7 @@ app.post('/api/devices/arc/pair', (req, res) => {
 
         // Envoyer ON pour l'appairage
         // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
-        lighting1Handler.switchOn(device.houseCode, device.unitCode, (error) => {
+        lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
             if (error) {
                 log('error', `❌ Erreur lors de l'appairage:`, error);
                 return res.status(500).json({
@@ -847,11 +863,13 @@ function sendArcCommand(deviceId, command, res) {
     };
 
     try {
-        // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
+        // Pour Lighting1 (ARC), utiliser les méthodes wrapper switchUp, switchDown, stop
         if (command === 'on' || command === 'up') {
-            lighting1Handler.switchOn(device.houseCode, device.unitCode, callback);
-        } else if (command === 'off' || command === 'down' || command === 'stop') {
-            lighting1Handler.switchOff(device.houseCode, device.unitCode, callback);
+            lighting1Handler.switchUp(device.houseCode, device.unitCode, callback);
+        } else if (command === 'off' || command === 'down') {
+            lighting1Handler.switchDown(device.houseCode, device.unitCode, callback);
+        } else if (command === 'stop') {
+            lighting1Handler.stop(device.houseCode, device.unitCode, callback);
         } else {
             return res.status(400).json({
                 status: 'error',

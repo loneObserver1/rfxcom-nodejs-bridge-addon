@@ -78,12 +78,20 @@ async function main() {
     
     // Trouver le port
     let port = findUSBPort();
-    const portInput = (await question(`Port USB détecté: ${port}\n   Utiliser ce port ? (O/n): `)).trim().toLowerCase();
-    if (portInput === 'n' || portInput === 'non') {
-        port = (await question('Entrez le chemin du port USB: ')).trim();
-        if (!port) {
-            console.log('❌ Port requis');
-            process.exit(1);
+    
+    // Vérifier si un port est passé en argument
+    const args = process.argv.slice(2);
+    if (args.length > 0 && args[0] !== '--auto') {
+        port = args[0];
+        console.log(`📌 Port spécifié en argument: ${port}`);
+    } else {
+        const portInput = (await question(`Port USB détecté: ${port}\n   Utiliser ce port ? (O/n): `)).trim().toLowerCase();
+        if (portInput === 'n' || portInput === 'non') {
+            port = (await question('Entrez le chemin du port USB: ')).trim();
+            if (!port) {
+                console.log('❌ Port requis');
+                process.exit(1);
+            }
         }
     }
     
@@ -124,6 +132,24 @@ async function main() {
             rfxtrx,
             rfxcom.lighting1.ARC
         );
+        
+        // Ajouter les méthodes manquantes pour ARC (UP/DOWN/STOP)
+        // En utilisant _sendCommand directement avec les bonnes commandes
+        lighting1.switchUp = function(houseCode, unitCode, callback) {
+            // Pour ARC, switchOn (0x01) = UP (monter)
+            return this.switchOn(`${houseCode}${unitCode}`, callback);
+        };
+        
+        lighting1.switchDown = function(houseCode, unitCode, callback) {
+            // Pour ARC, switchOff (0x00) = DOWN (descendre)
+            return this.switchOff(`${houseCode}${unitCode}`, callback);
+        };
+        
+        lighting1.stop = function(houseCode, unitCode, callback) {
+            // Pour ARC, chime (0x07) peut être utilisé comme STOP
+            // ou on peut réenvoyer switchOff
+            return this.chime(`${houseCode}${unitCode}`, callback);
+        };
     
         // Descendre
         console.log('⬇️ Descente');
