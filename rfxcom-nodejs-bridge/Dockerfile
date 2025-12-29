@@ -1,11 +1,16 @@
 ARG BUILD_FROM
 FROM ${BUILD_FROM}
 
-# Install requirements for add-on
+# Install requirements for add-on including build dependencies for native modules
 RUN \
   apk add --no-cache \
     nodejs \
-    npm
+    npm \
+    python3 \
+    make \
+    g++ \
+    linux-headers \
+    udev
 
 # Copy package.json and install dependencies
 COPY package.json /app/
