@@ -1299,8 +1299,8 @@ function sendAcCommand(deviceId, command, res) {
     };
 
     try {
-        // Pour Lighting2 (AC), on utilise le format "{deviceId}:{unitCode}"
-        const deviceIdFormatted = `${device.deviceId}:${device.unitCode}`;
+        // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
+        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
 
         // Note: Les commandes ON/OFF ne modifient pas l'état d'appairage
         // L'appairage/désappairage se fait uniquement via les endpoints /pair et /unpair
