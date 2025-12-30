@@ -1,15 +1,23 @@
 name: "RFXCOM Node.js Bridge"
-description: "Bridge Node.js pour la communication RFXCOM via le package node-rfxcom. Nécessite l'add-on MQTT (Mosquitto) pour créer les entités Home Assistant."
+description: "Bridge Node.js pour la communication RFXCOM via le package node-rfxcom. Nécessite l'add-on MQTT (Mosquitto)."
 version: "2.0.8"
-slug: "rfxcom-nodejs-bridge"
+slug: rfxcom_nodejs_bridge
 init: false
 startup: services
+
 arch:
   - aarch64
   - amd64
   - armhf
   - armv7
   - i386
+
+devices:
+  - /dev/ttyUSB0
+
+privileged:
+  - SYS_RAWIO
+
 options:
   serial_port: "/dev/ttyUSB0"
   log_level: "info"
@@ -19,6 +27,7 @@ options:
   mqtt_port: 1883
   mqtt_user: ""
   mqtt_password: ""
+
 schema:
   serial_port: device(subsystem=tty)?
   log_level: list(error|warn|info|debug)?
@@ -28,6 +37,8 @@ schema:
   mqtt_port: int?
   mqtt_user: str?
   mqtt_password: password?
+
 ports:
   8889/tcp: 8889
+
 webui: http://[HOST]:[PORT:8889]/
