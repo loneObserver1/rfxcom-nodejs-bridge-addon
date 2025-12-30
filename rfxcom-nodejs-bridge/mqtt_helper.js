@@ -387,7 +387,7 @@ class MQTTHelper {
         this.client.publish(topic, state, { qos: 1, retain: true });
     }
 
-    // Publier la configuration de découverte Home Assistant pour une sonde température/humidité
+    // Publier la configuration de découverte Home Assistant pour une sonde température/humidité/pluie (Alecto)
     publishTempHumDiscovery(device) {
         if (!this.connected || !this.client) {
             this.log('warn', '⚠️ MQTT non connecté, impossible de publier la découverte');
@@ -397,18 +397,19 @@ class MQTTHelper {
         const deviceId = device.id || `temp_hum_${device.sensorId}`;
         const uniqueIdTemp = `rfxcom_temp_${device.sensorId}`;
         const uniqueIdHum = `rfxcom_hum_${device.sensorId}`;
+        const uniqueIdRain = `rfxcom_rain_${device.sensorId}`;
         
         // Configuration pour le capteur de température
         const tempConfig = {
             name: `${device.name} - Température`,
             unique_id: uniqueIdTemp,
-            state_topic: `rfxcom/sensor/${deviceId}/temperature/state`,
+            state_topic: `rfxcom/sensor/${deviceId}_temperature/state`,
             unit_of_measurement: '°C',
             device_class: 'temperature',
             device: {
                 identifiers: [`rfxcom_${deviceId}`],
                 name: device.name,
-                model: 'RFXCOM Temp/Hum',
+                model: device.type === 'TEMP_HUM' ? 'RFXCOM Alecto' : 'RFXCOM Temp/Hum',
                 manufacturer: 'RFXCOM'
             }
         };
@@ -417,19 +418,35 @@ class MQTTHelper {
         const humConfig = {
             name: `${device.name} - Humidité`,
             unique_id: uniqueIdHum,
-            state_topic: `rfxcom/sensor/${deviceId}/humidity/state`,
+            state_topic: `rfxcom/sensor/${deviceId}_humidity/state`,
             unit_of_measurement: '%',
             device_class: 'humidity',
             device: {
                 identifiers: [`rfxcom_${deviceId}`],
                 name: device.name,
-                model: 'RFXCOM Temp/Hum',
+                model: device.type === 'TEMP_HUM' ? 'RFXCOM Alecto' : 'RFXCOM Temp/Hum',
+                manufacturer: 'RFXCOM'
+            }
+        };
+
+        // Configuration pour le capteur de pluviométrie (si disponible)
+        const rainConfig = {
+            name: `${device.name} - Pluviométrie`,
+            unique_id: uniqueIdRain,
+            state_topic: `rfxcom/sensor/${deviceId}_rainfall/state`,
+            unit_of_measurement: 'mm',
+            device_class: 'precipitation',
+            device: {
+                identifiers: [`rfxcom_${deviceId}`],
+                name: device.name,
+                model: 'RFXCOM Alecto',
                 manufacturer: 'RFXCOM'
             }
         };
 
         const tempTopic = `${this.baseTopic}/sensor/rfxcom/${deviceId}_temperature/config`;
         const humTopic = `${this.baseTopic}/sensor/rfxcom/${deviceId}_humidity/config`;
+        const rainTopic = `${this.baseTopic}/sensor/rfxcom/${deviceId}_rainfall/config`;
 
         this.client.publish(tempTopic, JSON.stringify(tempConfig), { qos: 1, retain: true }, (error) => {
             if (error) {
@@ -444,6 +461,15 @@ class MQTTHelper {
                 this.log('error', `❌ Erreur lors de la publication de la découverte humidité: ${error.message}`);
             } else {
                 this.log('info', `✅ Entité humidité créée pour ${device.name}`);
+            }
+        });
+
+        // Publier la découverte pour la pluviométrie (toujours, même si les données ne sont pas encore disponibles)
+        this.client.publish(rainTopic, JSON.stringify(rainConfig), { qos: 1, retain: true }, (error) => {
+            if (error) {
+                this.log('error', `❌ Erreur lors de la publication de la découverte pluviométrie: ${error.message}`);
+            } else {
+                this.log('info', `✅ Entité pluviométrie créée pour ${device.name}`);
             }
         });
     }

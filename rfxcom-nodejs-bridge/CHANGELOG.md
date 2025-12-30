@@ -5,6 +5,29 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.2] - 2025-12-30
+
+### ✨ Nouvelles fonctionnalités
+
+- **Support des sondes Alecto TH13/WS1700** :
+  - Détection automatique des sondes TH13/WS1700 avec packet type 0x01
+  - Support de l'événement `temperaturehumidity1` du package rfxcom modifié
+  - Décodage correct de la température (partie entière + fraction / 256)
+  - Décodage correct de l'humidité avec facteur de conversion (raw * 100 / 327)
+  - Intégration automatique dans Home Assistant via MQTT Discovery
+  - Détection automatique activée si `auto_discovery` est à `true`
+
+### 🔧 Corrections
+
+- Utilisation du fork rfxcom avec support TH13 : `git+https://github.com/loneObserver1/node-rfxcom.git`
+- Ajout du listener pour l'événement `temperaturehumidity1` en plus de `temperaturerain1`
+- Amélioration de la détection des sondes avec vérification du subtype 13 (TH13)
+
+### 🛠️ Améliorations
+
+- Meilleure identification des types de sondes Alecto (TH13/WS1700 vs autres)
+- Logs améliorés pour la détection des sondes TH13
+
 ## [2.1.1] - 2025-12-29
 
 ### 🔧 Corrections

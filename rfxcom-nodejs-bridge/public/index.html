@@ -431,9 +431,6 @@
                 const acUnitCodeInput = document.getElementById('acUnitCode');
                 const unitCodeRaw = acUnitCodeInput ? acUnitCodeInput.value : null;
 
-                // Debug: afficher la valeur brute
-                console.log('🔍 Debug AC form:', { deviceIdRaw, unitCodeRaw, unitCodeRawType: typeof unitCodeRaw, acUnitCodeInputValue: acUnitCodeInput?.value });
-
                 // Traiter deviceId: enlever les espaces, convertir en majuscules
                 const deviceId = deviceIdRaw && deviceIdRaw.trim() !== '' ? deviceIdRaw.trim().toUpperCase() : undefined;
 
@@ -447,18 +444,9 @@
                         const parsed = parseInt(trimmed, 10);
                         if (!isNaN(parsed) && parsed >= 0 && parsed <= 16) {
                             unitCode = parsed;
-                            console.log('✅ Unit Code parsé:', unitCode);
-                        } else {
-                            console.log('⚠️ Unit Code invalide:', trimmed, 'parsed:', parsed);
                         }
-                    } else {
-                        console.log('⚠️ Unit Code ignoré (auto ou vide):', trimmed);
                     }
-                } else {
-                    console.log('⚠️ Unit Code non fourni');
                 }
-
-                console.log('📤 Données AC à envoyer:', { name: formData.get('name'), deviceId, unitCode, haDeviceType });
 
                 data = {
                     name: formData.get('name'),

@@ -157,7 +157,13 @@ curl -X POST http://localhost:8888/api/devices/arc/test \
 
 #### Méthode 4 : Détection automatique
 
-Si la détection automatique est activée, l'add-on détectera automatiquement les nouveaux appareils ARC et les sondes de température/humidité lorsqu'ils envoient des signaux.
+Si la détection automatique est activée, l'add-on détectera automatiquement :
+- Les nouveaux appareils ARC (volets)
+- Les nouveaux appareils AC (prises DIO Chacon)
+- Les sondes de température/humidité Alecto (TH13/WS1700 et autres modèles)
+- Les sondes de température/pluie Alecto
+
+Les sondes détectées sont automatiquement ajoutées et intégrées dans Home Assistant via MQTT Discovery.
 
 ### Contrôler depuis Home Assistant
 

@@ -541,6 +541,22 @@ function initializeRFXCOMAsync() {
                             log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
                         }
                     });
+                    
+                    // Écouter spécifiquement les événements "temperaturerain1" pour les sondes Alecto
+                    rfxtrx.on('temperaturerain1', (msg) => {
+                        log('info', `🌡️ Message Alecto temperaturerain1 reçu:`, JSON.stringify(msg));
+                        if (msg && typeof msg === 'object') {
+                            handleReceivedMessage(msg);
+                        }
+                    });
+                    
+                    // Écouter spécifiquement les événements "temperaturehumidity1" pour les sondes Alecto TH13/WS1700
+                    rfxtrx.on('temperaturehumidity1', (msg) => {
+                        log('info', `🌡️ Message Alecto TH13/WS1700 temperaturehumidity1 reçu:`, JSON.stringify(msg));
+                        if (msg && typeof msg === 'object') {
+                            handleReceivedMessage(msg);
+                        }
+                    });
                 } else {
                     // Même si AUTO_DISCOVERY est désactivé, on peut écouter les messages pour le debug
                     // mais on ne les traite pas pour la détection automatique
@@ -710,19 +726,29 @@ function handleReceivedMessage(msg) {
         }
     }
 
-    // Détecter les sondes de température/humidité
+    // Détecter les sondes de température/humidité/pluie (Alecto)
     // Le package rfxcom peut utiliser différents noms de type selon la version
-    if (msg.type === 'tempHumidity' || msg.type === 'TEMP_HUM' || msg.packetType === 'TEMP_HUM') {
+    // Support pour "temperaturerain1" (Alecto temp+rain), "temperaturehumidity1" (Alecto TH13/WS1700), et "tempHumidity" (générique)
+    const isTempSensor = 
+        msg.type === 'tempHumidity' || 
+        msg.type === 'TEMP_HUM' || 
+        msg.packetType === 'TEMP_HUM' ||
+        msg.type === 'temperaturerain1' ||
+        msg.type === 'temperaturehumidity1' ||
+        msg.subtype === 13; // TH13
+    
+    if (isTempSensor) {
         // Extraire l'ID de la sonde depuis différents champs possibles
         const sensorId = msg.id || msg.sensorId || msg.ID || `temp_${msg.channel || msg.channelNumber || 0}`;
         const id = `TEMP_HUM_${sensorId}`;
 
         if (!devices[id]) {
-            log('info', `🆕 Nouvelle sonde température/humidité détectée: ID ${sensorId}, Canal ${msg.channel || msg.channelNumber || 'N/A'}`);
+            const sensorType = msg.type === 'temperaturehumidity1' || msg.subtype === 13 ? 'TH13/WS1700' : 'Alecto';
+            log('info', `🆕 Nouvelle sonde température/humidité détectée (${sensorType}): ID ${sensorId}, Channel ${msg.channel || 'N/A'}`);
             devices[id] = {
                 type: 'TEMP_HUM',
                 haDeviceType: 'sensor', // Les capteurs sont toujours des sensors
-                name: `Sonde Temp/Hum ${sensorId}`,
+                name: `Sonde ${sensorType} ${sensorId}`,
                 sensorId: sensorId,
                 channel: msg.channel || msg.channelNumber,
                 subtype: msg.subtype,
@@ -742,12 +768,16 @@ function handleReceivedMessage(msg) {
             // Le package peut utiliser différents noms pour la température
             const temperature = msg.temperature || msg.Temperature;
             const humidity = msg.humidity || msg.Humidity;
+            const rainfall = msg.rainfall || msg.rain || msg.rainRate;
 
             if (temperature !== undefined && temperature !== null) {
                 mqttHelper.publishSensorState(`${id}_temperature`, temperature.toString(), '°C');
             }
             if (humidity !== undefined && humidity !== null) {
                 mqttHelper.publishSensorState(`${id}_humidity`, humidity.toString(), '%');
+            }
+            if (rainfall !== undefined && rainfall !== null) {
+                mqttHelper.publishSensorState(`${id}_rainfall`, rainfall.toString(), 'mm');
             }
         }
     }
@@ -1534,8 +1564,6 @@ app.post('/api/devices/ac', (req, res) => {
             }
         }
         const hasUnitCode = parsedUnitCode !== undefined;
-
-        log('info', `🔍 Vérification des valeurs fournies: deviceId="${finalDeviceId}" (hasDeviceId=${hasDeviceId}), unitCode="${finalUnitCode}" -> parsed="${parsedUnitCode}" (hasUnitCode=${hasUnitCode})`);
 
         // Si l'un ou l'autre est manquant, générer les deux
         if (!hasDeviceId || !hasUnitCode) {
