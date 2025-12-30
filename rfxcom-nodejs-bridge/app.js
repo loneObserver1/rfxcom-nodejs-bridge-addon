@@ -1514,10 +1514,26 @@ app.post('/api/devices/ac', (req, res) => {
         // Vérifier si les valeurs sont vraiment fournies
         // Pour deviceId: doit être une chaîne non vide
         const hasDeviceId = finalDeviceId !== undefined && finalDeviceId !== null && String(finalDeviceId).trim() !== '';
-        // Pour unitCode: doit être un nombre valide (0 est valide, donc on vérifie que ce n'est pas undefined/null/chaîne vide)
-        const hasUnitCode = finalUnitCode !== undefined && finalUnitCode !== null && String(finalUnitCode).trim() !== '';
 
-        log('info', `🔍 Vérification des valeurs fournies: deviceId="${finalDeviceId}" (hasDeviceId=${hasDeviceId}), unitCode="${finalUnitCode}" (hasUnitCode=${hasUnitCode})`);
+        // Pour unitCode: doit être un nombre valide (0 est valide)
+        // Vérifier d'abord si c'est un nombre, sinon essayer de parser
+        let parsedUnitCode = undefined;
+        if (finalUnitCode !== undefined && finalUnitCode !== null) {
+            if (typeof finalUnitCode === 'number') {
+                parsedUnitCode = finalUnitCode;
+            } else {
+                const str = String(finalUnitCode).trim();
+                if (str !== '') {
+                    const parsed = parseInt(str, 10);
+                    if (!isNaN(parsed)) {
+                        parsedUnitCode = parsed;
+                    }
+                }
+            }
+        }
+        const hasUnitCode = parsedUnitCode !== undefined;
+
+        log('info', `🔍 Vérification des valeurs fournies: deviceId="${finalDeviceId}" (hasDeviceId=${hasDeviceId}), unitCode="${finalUnitCode}" -> parsed="${parsedUnitCode}" (hasUnitCode=${hasUnitCode})`);
 
         // Si l'un ou l'autre est manquant, générer les deux
         if (!hasDeviceId || !hasUnitCode) {
@@ -1531,12 +1547,21 @@ app.post('/api/devices/ac', (req, res) => {
             }
             // Utiliser les valeurs fournies si disponibles, sinon utiliser les valeurs générées
             finalDeviceId = hasDeviceId ? String(finalDeviceId).trim().toUpperCase() : freeCode.deviceId;
-            finalUnitCode = hasUnitCode ? (typeof finalUnitCode === 'number' ? finalUnitCode : parseInt(finalUnitCode)) : freeCode.unitCode;
+            finalUnitCode = hasUnitCode ? parsedUnitCode : freeCode.unitCode;
             log('info', `🔍 Codes finaux: Device ID ${finalDeviceId}, Unit Code ${finalUnitCode}`);
         } else {
             // Normaliser les valeurs fournies
             finalDeviceId = String(finalDeviceId).trim().toUpperCase();
-            finalUnitCode = typeof finalUnitCode === 'number' ? finalUnitCode : parseInt(finalUnitCode);
+            finalUnitCode = parsedUnitCode; // Utiliser la valeur parsée
+
+            // Valider que le unitCode est dans la plage valide (0-16 pour AC)
+            if (finalUnitCode < 0 || finalUnitCode > 16) {
+                return res.status(400).json({
+                    status: 'error',
+                    error: `Unit Code invalide: ${finalUnitCode}. La valeur doit être entre 0 et 16.`
+                });
+            }
+
             log('info', `✅ Utilisation des valeurs fournies: Device ID ${finalDeviceId}, Unit Code ${finalUnitCode}`);
         }
 

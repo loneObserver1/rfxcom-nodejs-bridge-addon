@@ -2,9 +2,15 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.0.9**
+**Version actuelle : 2.1.0**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.0
+- **Correction de la prise en compte du Unit Code pour les appareils AC** :
+  - Le Unit Code fourni lors de la création d'un appareil AC est maintenant correctement pris en compte
+  - Amélioration du parsing et de la validation du Unit Code
+  - Correction de la logique qui ignorait parfois le Unit Code fourni
 
 ### Version 2.0.9
 - **Récupération automatique des appareils depuis MQTT** :
@@ -14,7 +20,7 @@ Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC
   - Plus besoin de recréer manuellement les appareils après une réinstallation
 
 ### Version 2.0.8
-- **Choix du type d'appareil indépendant du protocole RFXCOM** : 
+- **Choix du type d'appareil indépendant du protocole RFXCOM** :
   - Ajout du champ `haDeviceType` (volet/prise/capteur) pour contrôler comment l'appareil apparaît dans Home Assistant
   - Les volets AC peuvent maintenant être configurés comme `cover` dans Home Assistant
   - Les prises ARC peuvent maintenant être configurées comme `switch` dans Home Assistant
@@ -104,9 +110,9 @@ Si vous préférez utiliser les services REST depuis Home Assistant :
 1. **Configurer les services REST dans Home Assistant**
 
    Allez dans **Paramètres** → **Modules complémentaires** → **File editor** (ou installez-le depuis la boutique si nécessaire)
-   
+
    Ouvrez le fichier `configuration.yaml`
-   
+
    Ajoutez la section `rest_command:` à la fin du fichier (après vos autres configurations comme `scene: !include scenes.yaml`)
 
    **Exemple de configuration.yaml :**
@@ -121,25 +127,25 @@ Si vous préférez utiliser les services REST depuis Home Assistant :
        method: POST
        content_type: "application/json"
        payload: '{"name": "{{ name }}"}'
-       
+
      rfxcom_pair_arc_device:
        url: "http://localhost:8888/api/devices/arc/pair"
        method: POST
        content_type: "application/json"
        payload: '{"deviceId": "{{ device_id }}"}'
-       
+
      rfxcom_confirm_pair_arc_device:
        url: "http://localhost:8888/api/devices/arc/confirm-pair"
        method: POST
        content_type: "application/json"
        payload: '{"deviceId": "{{ device_id }}", "confirmed": true}'
-       
+
      rfxcom_test_arc_device:
        url: "http://localhost:8888/api/devices/arc/test"
        method: POST
        content_type: "application/json"
        payload: '{"deviceId": "{{ device_id }}", "command": "{{ command }}"}'
-       
+
      rfxcom_list_devices:
        url: "http://localhost:8888/api/devices"
        method: GET
