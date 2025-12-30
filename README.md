@@ -36,114 +36,85 @@ L'add-on RFXCOM Node.js Bridge se connectera automatiquement au broker MQTT via 
 
 ## Utilisation
 
-### Ajouter un appareil ARC (volet roulant)
+### Ajouter un appareil
 
-#### Méthode 1 : Depuis Home Assistant (Recommandé)
+#### Méthode 1 : Interface graphique (Recommandé)
 
-**Étape 1 : Configurer les services REST dans Home Assistant**
+L'add-on dispose d'une interface web intuitive pour gérer vos appareils.
 
-1. Allez dans **Paramètres** → **Modules complémentaires** → **File editor** (ou installez-le depuis la boutique si nécessaire)
-2. Ouvrez le fichier `configuration.yaml`
-3. Ajoutez la section `rest_command:` à la fin du fichier (après vos autres configurations comme `scene: !include scenes.yaml`)
+1. **Accéder à l'interface**
+   - Une fois l'add-on démarré, accédez à l'interface via :
+     - `http://homeassistant.local:[PORT]` (remplacez `[PORT]` par le port configuré, par défaut `8889`)
+     - Ou `http://[IP_HOST]:[PORT]` (remplacez `[IP_HOST]` par l'IP de votre Home Assistant)
+   - Le lien est également disponible dans la page de configuration de l'add-on
 
-**Exemple de configuration.yaml :**
-```yaml
-scene: !include scenes.yaml
+2. **Ajouter un appareil**
+   - Sélectionnez le **protocole RFXCOM** (ARC ou AC)
+   - Choisissez le **type dans Home Assistant** (volet/prise/capteur)
+   - Entrez le **nom de l'appareil**
+   - Les codes (House Code/Unit Code pour ARC, Device ID/Unit Code pour AC) sont générés automatiquement si vous ne les spécifiez pas
+   - Cliquez sur **"Créer l'appareil"**
 
-# Services REST pour RFXCOM Node.js Bridge
-rest_command:
-  rfxcom_add_arc_device:
-    url: "http://localhost:8888/api/devices/arc"
-    method: POST
-    content_type: "application/json"
-    payload: '{"name": "{{ name }}"}'
-    
-  rfxcom_pair_arc_device:
-    url: "http://localhost:8888/api/devices/arc/pair"
-    method: POST
-    content_type: "application/json"
-    payload: '{"deviceId": "{{ device_id }}"}'
-    
-  rfxcom_confirm_pair_arc_device:
-    url: "http://localhost:8888/api/devices/arc/confirm-pair"
-    method: POST
-    content_type: "application/json"
-    payload: '{"deviceId": "{{ device_id }}", "confirmed": true}'
-    
-  rfxcom_test_arc_device:
-    url: "http://localhost:8888/api/devices/arc/test"
-    method: POST
-    content_type: "application/json"
-    payload: '{"deviceId": "{{ device_id }}", "command": "{{ command }}"}'
-    
-  rfxcom_list_devices:
-    url: "http://localhost:8888/api/devices"
-    method: GET
-```
+3. **Appairer l'appareil**
+   - Mettez l'appareil en mode appairage
+   - Cliquez sur **"Appairer"** dans l'interface
+   - Confirmez que l'appareil a répondu
 
-**Note :** Si vous avez déjà une section `rest_command:` dans votre fichier, ajoutez simplement les nouveaux services dans cette section existante.
+#### Méthode 2 : Services REST dans Home Assistant
 
-```yaml
-rest_command:
-  rfxcom_add_arc_device:
-    url: "http://localhost:8888/api/devices/arc"
-    method: POST
-    content_type: "application/json"
-    payload: '{"name": "{{ name }}"}'
-    
-  rfxcom_pair_arc_device:
-    url: "http://localhost:8888/api/devices/arc/pair"
-    method: POST
-    content_type: "application/json"
-    payload: '{"deviceId": "{{ device_id }}"}'
-    
-  rfxcom_confirm_pair_arc_device:
-    url: "http://localhost:8888/api/devices/arc/confirm-pair"
-    method: POST
-    content_type: "application/json"
-    payload: '{"deviceId": "{{ device_id }}", "confirmed": true}'
-    
-  rfxcom_test_arc_device:
-    url: "http://localhost:8888/api/devices/arc/test"
-    method: POST
-    content_type: "application/json"
-    payload: '{"deviceId": "{{ device_id }}", "command": "{{ command }}"}'
-    
-  rfxcom_list_devices:
-    url: "http://localhost:8888/api/devices"
-    method: GET
-```
+Si vous préférez utiliser les services REST depuis Home Assistant :
 
-**Étape 2 : Redémarrer Home Assistant**
+1. **Configurer les services REST dans Home Assistant**
 
-Après avoir ajouté la configuration, redémarrez Home Assistant pour que les nouveaux services soient disponibles :
-- Allez dans **Paramètres** → **Système** → **Redémarrer**
-- Ou utilisez le service `homeassistant.restart`
+   Allez dans **Paramètres** → **Modules complémentaires** → **File editor** (ou installez-le depuis la boutique si nécessaire)
+   
+   Ouvrez le fichier `configuration.yaml`
+   
+   Ajoutez la section `rest_command:` à la fin du fichier (après vos autres configurations comme `scene: !include scenes.yaml`)
 
-**Étape 3 : Utiliser les services depuis l'interface Home Assistant**
+   **Exemple de configuration.yaml :**
 
-1. Allez dans **Paramètres** → **Scénarios et automatisations** → **Services**
-2. Recherchez `rest_command.rfxcom_add_arc_device`
-3. Cliquez sur **Appeler le service**
-4. Dans le champ **name**, entrez le nom de votre appareil (ex: "Volet Salon")
-5. Cliquez sur **Appeler le service**
+   ```yaml
+   scene: !include scenes.yaml
 
-L'add-on trouvera automatiquement un house code et unit code libre et créera l'appareil. Une entité Home Assistant sera automatiquement créée via MQTT.
+   # Services REST pour RFXCOM Node.js Bridge
+   rest_command:
+     rfxcom_add_arc_device:
+       url: "http://localhost:8888/api/devices/arc"
+       method: POST
+       content_type: "application/json"
+       payload: '{"name": "{{ name }}"}'
+       
+     rfxcom_pair_arc_device:
+       url: "http://localhost:8888/api/devices/arc/pair"
+       method: POST
+       content_type: "application/json"
+       payload: '{"deviceId": "{{ device_id }}"}'
+       
+     rfxcom_confirm_pair_arc_device:
+       url: "http://localhost:8888/api/devices/arc/confirm-pair"
+       method: POST
+       content_type: "application/json"
+       payload: '{"deviceId": "{{ device_id }}", "confirmed": true}'
+       
+     rfxcom_test_arc_device:
+       url: "http://localhost:8888/api/devices/arc/test"
+       method: POST
+       content_type: "application/json"
+       payload: '{"deviceId": "{{ device_id }}", "command": "{{ command }}"}'
+       
+     rfxcom_list_devices:
+       url: "http://localhost:8888/api/devices"
+       method: GET
+   ```
 
-**Étape 3 : Appairer l'appareil**
+   > **Note** : Si vous avez déjà une section `rest_command:` dans votre fichier, ajoutez simplement les nouveaux services dans cette section existante.
 
-1. Mettez votre volet roulant en mode appairage (suivez les instructions du fabricant)
-2. Utilisez le service `rest_command.rfxcom_pair_arc_device` avec le `device_id` retourné (ex: "ARC_A_1")
-3. Vérifiez que l'appareil a bien répondu
-4. Utilisez le service `rest_command.rfxcom_confirm_pair_arc_device` pour confirmer l'appairage
+2. **Redémarrer Home Assistant** pour charger la nouvelle configuration
 
-**Étape 4 : Tester l'appareil**
+3. **Utiliser les services** depuis **Paramètres** → **Services** → **RESTful Command**
 
-Utilisez le service `rest_command.rfxcom_test_arc_device` avec :
-- `device_id`: L'ID de l'appareil (ex: "ARC_A_1")
-- `command`: "on" (monter), "off" (descendre), ou "stop" (arrêter)
-
-#### Méthode 2 : Via l'API HTTP (ligne de commande)
+#### Méthode 3 : Via l'API HTTP (ligne de commande)
 
 1. **Créer l'appareil** :
 ```bash
@@ -184,7 +155,7 @@ curl -X POST http://localhost:8888/api/devices/arc/test \
   -d '{"deviceId": "ARC_A_1", "command": "off"}'
 ```
 
-#### Méthode 3 : Détection automatique
+#### Méthode 4 : Détection automatique
 
 Si la détection automatique est activée, l'add-on détectera automatiquement les nouveaux appareils ARC et les sondes de température/humidité lorsqu'ils envoient des signaux.
 
