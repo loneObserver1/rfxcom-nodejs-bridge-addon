@@ -2,9 +2,18 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.0.7**
+**Version actuelle : 2.0.8**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.0.8
+- **Choix du type d'appareil indépendant du protocole RFXCOM** : 
+  - Ajout du champ `haDeviceType` (volet/prise/capteur) pour contrôler comment l'appareil apparaît dans Home Assistant
+  - Les volets AC peuvent maintenant être configurés comme `cover` dans Home Assistant
+  - Les prises ARC peuvent maintenant être configurées comme `switch` dans Home Assistant
+  - Sélecteur de type dans le formulaire d'ajout d'appareil
+  - Bouton "Modifier type" pour changer le type d'un appareil existant
+  - Mise à jour automatique de la découverte MQTT lors du changement de type
 
 ### Version 2.0.7
 - **Correction de la prise en compte des valeurs saisies** : Les Device ID et Unit Code saisis dans le formulaire sont maintenant correctement utilisés
