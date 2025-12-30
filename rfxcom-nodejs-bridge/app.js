@@ -61,17 +61,39 @@ function loadDevices() {
                 devices = {};
                 log('warn', '⚠️ Fichier devices.json vide, initialisation avec un objet vide');
                 saveDevices(); // Créer un fichier valide
-            } else {
-                devices = JSON.parse(data);
-                // Vérifier que c'est bien un objet
-                if (typeof devices !== 'object' || Array.isArray(devices)) {
-                    log('warn', '⚠️ Format de fichier invalide, réinitialisation');
-                    devices = {};
-                    saveDevices();
                 } else {
-                    log('info', `📦 ${Object.keys(devices).length} appareil(s) chargé(s)`);
+                    devices = JSON.parse(data);
+                    // Vérifier que c'est bien un objet
+                    if (typeof devices !== 'object' || Array.isArray(devices)) {
+                        log('warn', '⚠️ Format de fichier invalide, réinitialisation');
+                        devices = {};
+                        saveDevices();
+                    } else {
+                        // Migration: ajouter haDeviceType pour les appareils existants qui n'en ont pas
+                        let migrated = false;
+                        Object.keys(devices).forEach(deviceId => {
+                            const device = devices[deviceId];
+                            if (!device.haDeviceType) {
+                                // Définir la valeur par défaut selon le type RFXCOM
+                                if (device.type === 'ARC') {
+                                    device.haDeviceType = 'cover';
+                                } else if (device.type === 'AC') {
+                                    device.haDeviceType = 'switch';
+                                } else if (device.type === 'TEMP_HUM') {
+                                    device.haDeviceType = 'sensor';
+                                } else {
+                                    device.haDeviceType = 'switch'; // Par défaut
+                                }
+                                migrated = true;
+                            }
+                        });
+                        if (migrated) {
+                            saveDevices();
+                            log('info', '🔄 Migration: haDeviceType ajouté aux appareils existants');
+                        }
+                        log('info', `📦 ${Object.keys(devices).length} appareil(s) chargé(s)`);
+                    }
                 }
-            }
         } else {
             devices = {};
             log('info', '📦 Aucun appareil enregistré, création du fichier devices.json');
@@ -237,10 +259,20 @@ function initializeMQTT() {
                 const commandType = parts[3];
 
                 log('debug', `🔍 Type: ${deviceType}, DeviceId: ${deviceId}, CommandType: ${commandType}`);
-                log('debug', `🔍 Device existe: ${!!devices[deviceId]}, Type device: ${devices[deviceId]?.type}, Handler: ${deviceType === 'cover' ? !!lighting1Handler : !!lighting2Handler}`);
+                
+                // Récupérer le haDeviceType de l'appareil
+                const device = devices[deviceId];
+                const haDeviceType = device?.haDeviceType || 
+                    (device?.type === 'ARC' ? 'cover' : 
+                     device?.type === 'AC' ? 'switch' : 
+                     device?.type === 'TEMP_HUM' ? 'sensor' : 'switch');
+                
+                log('debug', `🔍 Device existe: ${!!device}, Type device: ${device?.type}, haDeviceType: ${haDeviceType}, Handler: ${deviceType === 'cover' ? !!lighting1Handler : !!lighting2Handler}`);
 
-                // Gestion des volets ARC
-                if (deviceType === 'cover' && devices[deviceId] && devices[deviceId].type === 'ARC' && lighting1Handler) {
+                // Gestion des volets (cover) - ARC ou AC avec haDeviceType='cover'
+                if (deviceType === 'cover' && device && haDeviceType === 'cover') {
+                    // Pour ARC, utiliser lighting1Handler
+                    if (device.type === 'ARC' && lighting1Handler) {
                     const device = devices[deviceId];
                     // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
 
@@ -283,12 +315,61 @@ function initializeMQTT() {
                             log('warn', `⚠️ Commande ARC inconnue: ${messageStr}`);
                         }
                     }
+                    // Pour AC avec haDeviceType='cover', utiliser lighting2Handler
+                    else if (device.type === 'AC' && lighting2Handler) {
+                        // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
+                        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
+                        
+                        if (commandType === 'set') {
+                            const messageStr = message.toString().trim();
+                            log('info', `🎯 Commande AC (cover) reçue: ${messageStr}`);
+                            
+                            if (messageStr === 'OPEN' || messageStr === 'open') {
+                                lighting2Handler.switchOn(deviceIdFormatted, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande OPEN: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande OPEN envoyée à ${device.name}`);
+                                        if (mqttHelper) {
+                                            mqttHelper.publishCoverState(deviceId, 'open');
+                                        }
+                                    }
+                                });
+                            } else if (messageStr === 'CLOSE' || messageStr === 'close') {
+                                lighting2Handler.switchOff(deviceIdFormatted, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande CLOSE: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande CLOSE envoyée à ${device.name}`);
+                                        if (mqttHelper) {
+                                            mqttHelper.publishCoverState(deviceId, 'closed');
+                                        }
+                                    }
+                                });
+                            } else if (messageStr === 'STOP' || messageStr === 'stop') {
+                                // Pour AC, STOP = OFF
+                                lighting2Handler.switchOff(deviceIdFormatted, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande STOP: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande STOP envoyée à ${device.name}`);
+                                        if (mqttHelper) {
+                                            mqttHelper.publishCoverState(deviceId, 'open');
+                                        }
+                                    }
+                                });
+                            } else {
+                                log('warn', `⚠️ Commande AC (cover) inconnue: ${messageStr}`);
+                            }
+                        }
+                    }
                 }
-                // Gestion des prises AC
-                else if (deviceType === 'switch' && devices[deviceId] && devices[deviceId].type === 'AC' && lighting2Handler) {
-                    const device = devices[deviceId];
-                    // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
-                    const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
+                // Gestion des switches (prises) - AC ou ARC avec haDeviceType='switch'
+                else if (deviceType === 'switch' && device && haDeviceType === 'switch') {
+                    // Pour AC, utiliser lighting2Handler
+                    if (device.type === 'AC' && lighting2Handler) {
+                        // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
+                        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
 
                     if (commandType === 'set') {
                         // Commandes: ON, OFF
@@ -321,14 +402,51 @@ function initializeMQTT() {
                             log('warn', `⚠️ Commande AC inconnue: ${messageStr}`);
                         }
                     }
+                    // Pour ARC avec haDeviceType='switch', utiliser lighting1Handler
+                    else if (device.type === 'ARC' && lighting1Handler) {
+                        if (commandType === 'set') {
+                            const messageStr = message.toString().trim();
+                            log('info', `🎯 Commande ARC (switch) reçue: ${messageStr}`);
+                            
+                            if (messageStr === 'ON' || messageStr === 'on') {
+                                lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande ON: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande ON envoyée à ${device.name}`);
+                                        if (mqttHelper) {
+                                            mqttHelper.publishSwitchState(deviceId, 'ON');
+                                        }
+                                    }
+                                });
+                            } else if (messageStr === 'OFF' || messageStr === 'off') {
+                                lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande OFF: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande OFF envoyée à ${device.name}`);
+                                        if (mqttHelper) {
+                                            mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                        }
+                                    }
+                                });
+                            } else {
+                                log('warn', `⚠️ Commande ARC (switch) inconnue: ${messageStr}`);
+                            }
+                        }
+                    }
                 } else {
-                    if (deviceType === 'switch' && !devices[deviceId]) {
+                    if (deviceType === 'switch' && !device) {
                         log('warn', `⚠️ Appareil non trouvé pour deviceId: ${deviceId}`);
                         log('debug', `📋 Appareils disponibles: ${Object.keys(devices).join(', ')}`);
-                    } else if (deviceType === 'switch' && devices[deviceId] && devices[deviceId].type !== 'AC') {
-                        log('warn', `⚠️ Type d'appareil incorrect: ${devices[deviceId].type} (attendu: AC)`);
-                    } else if (deviceType === 'switch' && !lighting2Handler) {
+                    } else if (deviceType === 'switch' && device && haDeviceType !== 'switch') {
+                        log('warn', `⚠️ Type HA incorrect: ${haDeviceType} (attendu: switch) pour deviceId: ${deviceId}`);
+                    } else if (deviceType === 'cover' && device && haDeviceType !== 'cover') {
+                        log('warn', `⚠️ Type HA incorrect: ${haDeviceType} (attendu: cover) pour deviceId: ${deviceId}`);
+                    } else if (deviceType === 'switch' && !lighting2Handler && device?.type === 'AC') {
                         log('error', `❌ lighting2Handler non initialisé`);
+                    } else if (deviceType === 'cover' && !lighting1Handler && device?.type === 'ARC') {
+                        log('error', `❌ lighting1Handler non initialisé`);
                     }
                 }
             } else {
@@ -455,13 +573,7 @@ function initializeRFXCOMAsync() {
                                     log('info', `📡 Publication des ${deviceCount} entité(s) Home Assistant existante(s)...`);
                                     Object.keys(devices).forEach(deviceId => {
                                         const device = devices[deviceId];
-                                        if (device.type === 'ARC') {
-                                            mqttHelper.publishCoverDiscovery({ ...device, id: deviceId });
-                                        } else if (device.type === 'AC') {
-                                            mqttHelper.publishSwitchDiscovery({ ...device, id: deviceId });
-                                        } else if (device.type === 'TEMP_HUM') {
-                                            mqttHelper.publishTempHumDiscovery({ ...device, id: deviceId });
-                                        }
+                                        mqttHelper.publishDeviceDiscovery({ ...device, id: deviceId });
                                     });
                                 }, 1000);
                             } else {
@@ -555,6 +667,7 @@ function handleReceivedMessage(msg) {
             log('info', `🆕 Nouvel appareil ARC détecté: ${msg.houseCode}${msg.unitCode}`);
             devices[id] = {
                 type: 'ARC',
+                haDeviceType: 'cover', // Par défaut pour ARC
                 name: `ARC ${msg.houseCode}${msg.unitCode}`,
                 houseCode: msg.houseCode,
                 unitCode: msg.unitCode,
@@ -565,7 +678,7 @@ function handleReceivedMessage(msg) {
 
             // Publier la découverte Home Assistant
             if (mqttHelper && mqttHelper.connected) {
-                mqttHelper.publishCoverDiscovery({ ...devices[id], id: id });
+                mqttHelper.publishDeviceDiscovery({ ...devices[id], id: id });
             }
         }
     }
@@ -579,6 +692,7 @@ function handleReceivedMessage(msg) {
             log('info', `🆕 Nouvel appareil AC détecté: ${deviceId}, Unit ${unitCode}`);
             devices[id] = {
                 type: 'AC',
+                haDeviceType: 'switch', // Par défaut pour AC
                 name: `AC ${deviceId}/${unitCode}`,
                 deviceId: deviceId.toString().toUpperCase(),
                 unitCode: unitCode,
@@ -589,7 +703,7 @@ function handleReceivedMessage(msg) {
 
             // Publier la découverte Home Assistant
             if (mqttHelper && mqttHelper.connected) {
-                mqttHelper.publishSwitchDiscovery({ ...devices[id], id: id });
+                mqttHelper.publishDeviceDiscovery({ ...devices[id], id: id });
             }
         }
     }
@@ -605,6 +719,7 @@ function handleReceivedMessage(msg) {
             log('info', `🆕 Nouvelle sonde température/humidité détectée: ID ${sensorId}, Canal ${msg.channel || msg.channelNumber || 'N/A'}`);
             devices[id] = {
                 type: 'TEMP_HUM',
+                haDeviceType: 'sensor', // Les capteurs sont toujours des sensors
                 name: `Sonde Temp/Hum ${sensorId}`,
                 sensorId: sensorId,
                 channel: msg.channel || msg.channelNumber,
@@ -616,7 +731,7 @@ function handleReceivedMessage(msg) {
 
             // Publier la découverte Home Assistant
             if (mqttHelper && mqttHelper.connected) {
-                mqttHelper.publishTempHumDiscovery({ ...devices[id], id: id });
+                mqttHelper.publishDeviceDiscovery({ ...devices[id], id: id });
             }
         }
 
@@ -776,8 +891,12 @@ app.post('/api/devices/arc', (req, res) => {
             });
         }
 
+        // Valeur par défaut pour haDeviceType : 'cover' pour ARC
+        const haDeviceType = req.body.haDeviceType || 'cover';
+        
         devices[id] = {
             type: 'ARC',
+            haDeviceType: haDeviceType, // 'cover', 'switch', ou 'sensor'
             name: name,
             houseCode: finalHouseCode,
             unitCode: finalUnitCode,
@@ -789,10 +908,10 @@ app.post('/api/devices/arc', (req, res) => {
         saveDevices();
         log('info', `✅ Appareil ARC créé: ${name} (${id}) - House code: ${finalHouseCode}, Unit code: ${finalUnitCode}`);
 
-        // Publier la découverte Home Assistant
+        // Publier la découverte Home Assistant selon haDeviceType
         if (mqttHelper && mqttHelper.connected) {
-            mqttHelper.publishCoverDiscovery({ ...devices[id], id: id });
-            log('info', `📡 Entité Home Assistant créée pour ${name}`);
+            mqttHelper.publishDeviceDiscovery({ ...devices[id], id: id });
+            log('info', `📡 Entité Home Assistant créée pour ${name} (type: ${haDeviceType})`);
         } else {
             log('warn', `⚠️ MQTT non connecté, l'entité Home Assistant sera créée lors de la prochaine connexion`);
         }
@@ -1180,8 +1299,8 @@ function sendAcCommand(deviceId, command, res) {
     };
 
     try {
-        // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
-        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
+        // Pour Lighting2 (AC), on utilise le format "{deviceId}:{unitCode}"
+        const deviceIdFormatted = `${device.deviceId}:${device.unitCode}`;
 
         // Note: Les commandes ON/OFF ne modifient pas l'état d'appairage
         // L'appairage/désappairage se fait uniquement via les endpoints /pair et /unpair
@@ -1276,9 +1395,13 @@ app.post('/api/devices/ac', (req, res) => {
             });
         }
 
+        // Valeur par défaut pour haDeviceType : 'switch' pour AC
+        const haDeviceType = req.body.haDeviceType || 'switch';
+        
         // Créer l'appareil
         devices[id] = {
             type: 'AC',
+            haDeviceType: haDeviceType, // 'cover', 'switch', ou 'sensor'
             name: name,
             deviceId: normalizedDeviceId,
             unitCode: finalUnitCode,
@@ -1288,9 +1411,12 @@ app.post('/api/devices/ac', (req, res) => {
         saveDevices();
         log('info', `✅ Appareil AC ajouté: ${name} (${normalizedDeviceId}/${finalUnitCode})`);
 
-        // Publier la découverte Home Assistant
+        // Publier la découverte Home Assistant selon haDeviceType
         if (mqttHelper && mqttHelper.connected) {
-            mqttHelper.publishSwitchDiscovery({ ...devices[id], id: id });
+            mqttHelper.publishDeviceDiscovery({ ...devices[id], id: id });
+            log('info', `📡 Entité Home Assistant créée pour ${name} (type: ${haDeviceType})`);
+        } else {
+            log('warn', `⚠️ MQTT non connecté, l'entité Home Assistant sera créée lors de la prochaine connexion`);
         }
 
         res.json({
@@ -1395,7 +1521,7 @@ app.post('/api/devices/ac/confirm-pair', (req, res) => {
 
             // Publier la découverte Home Assistant
             if (mqttHelper && mqttHelper.connected) {
-                mqttHelper.publishSwitchDiscovery({ ...devices[deviceId], id: deviceId });
+                mqttHelper.publishDeviceDiscovery({ ...devices[deviceId], id: deviceId });
             }
 
             log('info', `✅ Appairage confirmé pour ${device.name}`);
@@ -1575,11 +1701,7 @@ app.put('/api/devices/:id/rename', (req, res) => {
 
         // Mettre à jour la découverte Home Assistant avec le nouveau nom
         if (mqttHelper && mqttHelper.connected) {
-            if (devices[deviceId].type === 'ARC') {
-                mqttHelper.publishCoverDiscovery({ ...devices[deviceId], id: deviceId });
-            } else if (devices[deviceId].type === 'AC') {
-                mqttHelper.publishSwitchDiscovery({ ...devices[deviceId], id: deviceId });
-            }
+            mqttHelper.publishDeviceDiscovery({ ...devices[deviceId], id: deviceId });
         }
 
         res.json({
@@ -1589,6 +1711,61 @@ app.put('/api/devices/:id/rename', (req, res) => {
         });
     } catch (error) {
         log('error', `❌ Erreur lors du renommage:`, error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message
+        });
+    }
+});
+
+// Modifier le type d'un appareil (haDeviceType)
+app.put('/api/devices/:id/type', (req, res) => {
+    try {
+        const deviceId = req.params.id;
+        const { haDeviceType } = req.body;
+
+        if (!devices[deviceId]) {
+            return res.status(404).json({
+                status: 'error',
+                error: 'Appareil non trouvé'
+            });
+        }
+
+        // Valider le type
+        const validTypes = ['cover', 'switch', 'sensor'];
+        if (!haDeviceType || !validTypes.includes(haDeviceType)) {
+            return res.status(400).json({
+                status: 'error',
+                error: `Type invalide. Types valides: ${validTypes.join(', ')}`
+            });
+        }
+
+        const oldType = devices[deviceId].haDeviceType || 
+            (devices[deviceId].type === 'ARC' ? 'cover' : 
+             devices[deviceId].type === 'AC' ? 'switch' : 'sensor');
+        
+        devices[deviceId].haDeviceType = haDeviceType;
+        saveDevices();
+
+        log('info', `✅ Type d'appareil modifié: ${deviceId} (${oldType} → ${haDeviceType})`);
+
+        // Supprimer l'ancienne découverte et publier la nouvelle
+        if (mqttHelper && mqttHelper.connected) {
+            // Supprimer l'ancienne découverte
+            mqttHelper.removeDiscovery(deviceId);
+            // Publier la nouvelle découverte
+            setTimeout(() => {
+                mqttHelper.publishDeviceDiscovery({ ...devices[deviceId], id: deviceId });
+            }, 500);
+        }
+
+        res.json({
+            status: 'success',
+            message: `Type d'appareil modifié: ${oldType} → ${haDeviceType}`,
+            device: devices[deviceId]
+        });
+    } catch (error) {
+        log('error', `❌ Erreur lors de la modification du type:`, error);
         res.status(500).json({
             status: 'error',
             error: error.message

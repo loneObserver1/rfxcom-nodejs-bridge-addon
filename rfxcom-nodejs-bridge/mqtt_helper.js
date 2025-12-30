@@ -191,15 +191,26 @@ class MQTTHelper {
     }
 
     // Publier la configuration de découverte Home Assistant pour un volet ARC
+    // Peut aussi être utilisé pour créer un cover à partir d'un AC si haDeviceType est 'cover'
     publishCoverDiscovery(device) {
         if (!this.connected || !this.client) {
             this.log('warn', '⚠️ MQTT non connecté, impossible de publier la découverte');
             return;
         }
 
-        // Utiliser l'ID exact de l'appareil (ex: ARC_A_1) pour correspondre à devices[deviceId]
-        const deviceId = device.id || `ARC_${device.houseCode}_${device.unitCode}`;
-        const uniqueId = `rfxcom_arc_${device.houseCode}_${device.unitCode}`;
+        // Utiliser l'ID exact de l'appareil
+        let deviceId, uniqueId;
+        if (device.type === 'ARC') {
+            deviceId = device.id || `ARC_${device.houseCode}_${device.unitCode}`;
+            uniqueId = `rfxcom_arc_${device.houseCode}_${device.unitCode}`;
+        } else if (device.type === 'AC') {
+            deviceId = device.id || `AC_${device.deviceId}_${device.unitCode}`;
+            uniqueId = `rfxcom_ac_cover_${device.deviceId}_${device.unitCode}`;
+        } else {
+            deviceId = device.id || `device_${Date.now()}`;
+            uniqueId = `rfxcom_cover_${deviceId}`;
+        }
+        
         const topic = `${this.baseTopic}/cover/rfxcom/${deviceId}/config`;
         
         const config = {
@@ -248,16 +259,31 @@ class MQTTHelper {
     }
     
     // Publier la configuration de découverte Home Assistant pour un switch AC
+    // Peut aussi être utilisé pour créer un switch à partir d'un ARC si haDeviceType est 'switch'
     publishSwitchDiscovery(device) {
         if (!this.connected || !this.client) {
             this.log('warn', '⚠️ MQTT non connecté, impossible de publier la découverte');
             return;
         }
 
-        // Utiliser l'ID exact de l'appareil (ex: AC_02382C82_2) pour correspondre à devices[deviceId]
-        const deviceId = device.id || `AC_${device.deviceId}_${device.unitCode}`;
-        const uniqueId = `rfxcom_ac_${device.deviceId}_${device.unitCode}`;
+        // Utiliser l'ID exact de l'appareil
+        let deviceId, uniqueId;
+        if (device.type === 'AC') {
+            deviceId = device.id || `AC_${device.deviceId}_${device.unitCode}`;
+            uniqueId = `rfxcom_ac_${device.deviceId}_${device.unitCode}`;
+        } else if (device.type === 'ARC') {
+            deviceId = device.id || `ARC_${device.houseCode}_${device.unitCode}`;
+            uniqueId = `rfxcom_arc_switch_${device.houseCode}_${device.unitCode}`;
+        } else {
+            deviceId = device.id || `device_${Date.now()}`;
+            uniqueId = `rfxcom_switch_${deviceId}`;
+        }
+        
         const topic = `${this.baseTopic}/switch/rfxcom/${deviceId}/config`;
+        
+        // Déterminer device_class selon haDeviceType (par défaut 'outlet' pour switch)
+        const haDeviceType = device.haDeviceType || 'switch';
+        const deviceClass = haDeviceType === 'switch' ? 'outlet' : undefined;
         
         const config = {
             name: device.name,
@@ -268,14 +294,18 @@ class MQTTHelper {
             payload_off: 'OFF',
             state_on: 'ON',
             state_off: 'OFF',
-            device_class: 'outlet', // Identifie comme une prise (outlet) dans Home Assistant
             device: {
                 identifiers: [`rfxcom_${deviceId}`],
                 name: device.name,
-                model: 'RFXCOM AC',
+                model: device.type === 'AC' ? 'RFXCOM AC' : 'RFXCOM ARC',
                 manufacturer: 'RFXCOM'
             }
         };
+        
+        // Ajouter device_class seulement si c'est une prise
+        if (deviceClass) {
+            config.device_class = deviceClass;
+        }
 
         try {
             this.client.publish(topic, JSON.stringify(config), { qos: 1, retain: true }, (error) => {
@@ -438,13 +468,56 @@ class MQTTHelper {
             }
         });
         
-        // Supprimer pour les switches (AC)
+        // Supprimer pour les switches
         const switchTopic = `${this.baseTopic}/switch/rfxcom/${deviceId}/config`;
         this.client.publish(switchTopic, '', { qos: 1, retain: true }, (error) => {
             if (!error) {
                 this.log('info', `🗑️ Entité switch Home Assistant supprimée pour ${deviceId}`);
             }
         });
+        
+        // Supprimer pour les sensors (temp/hum)
+        const sensorTempTopic = `${this.baseTopic}/sensor/rfxcom/${deviceId}_temperature/config`;
+        const sensorHumTopic = `${this.baseTopic}/sensor/rfxcom/${deviceId}_humidity/config`;
+        this.client.publish(sensorTempTopic, '', { qos: 1, retain: true }, (error) => {
+            if (!error) {
+                this.log('info', `🗑️ Entité sensor température supprimée pour ${deviceId}`);
+            }
+        });
+        this.client.publish(sensorHumTopic, '', { qos: 1, retain: true }, (error) => {
+            if (!error) {
+                this.log('info', `🗑️ Entité sensor humidité supprimée pour ${deviceId}`);
+            }
+        });
+    }
+
+    // Fonction unifiée pour publier la découverte selon haDeviceType
+    publishDeviceDiscovery(device) {
+        if (!this.connected || !this.client) {
+            this.log('warn', '⚠️ MQTT non connecté, impossible de publier la découverte');
+            return;
+        }
+
+        // Déterminer le type HA (par défaut selon le type RFXCOM si non spécifié)
+        const haDeviceType = device.haDeviceType || 
+            (device.type === 'ARC' ? 'cover' : 
+             device.type === 'AC' ? 'switch' : 
+             device.type === 'TEMP_HUM' ? 'sensor' : 'switch');
+
+        // Supprimer l'ancienne découverte avant de publier la nouvelle
+        this.removeDiscovery(device.id || `device_${Date.now()}`);
+
+        // Publier selon le type HA
+        if (haDeviceType === 'cover') {
+            this.publishCoverDiscovery(device);
+        } else if (haDeviceType === 'switch') {
+            this.publishSwitchDiscovery(device);
+        } else if (haDeviceType === 'sensor') {
+            this.publishTempHumDiscovery(device);
+        } else {
+            this.log('warn', `⚠️ Type HA inconnu: ${haDeviceType}, utilisation de switch par défaut`);
+            this.publishSwitchDiscovery(device);
+        }
     }
 
     disconnect() {

@@ -5,6 +5,27 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.0.8] - 2025-12-29
+
+### ✨ Nouvelles fonctionnalités
+- **Choix du type d'appareil indépendant du protocole RFXCOM** :
+  - Ajout du champ `haDeviceType` (volet/prise/capteur) pour contrôler comment l'appareil apparaît dans Home Assistant
+  - Les volets AC peuvent maintenant être configurés comme `cover` dans Home Assistant
+  - Les prises ARC peuvent maintenant être configurées comme `switch` dans Home Assistant
+  - Sélecteur de type dans le formulaire d'ajout d'appareil
+  - Bouton "Modifier type" pour changer le type d'un appareil existant
+  - Mise à jour automatique de la découverte MQTT lors du changement de type
+
+### 🔧 Corrections
+- Correction du gestionnaire MQTT pour utiliser `haDeviceType` au lieu du protocole uniquement
+- Correction du format `deviceIdFormatted` pour AC : `0x{deviceId}/{unitCode}`
+- Suppression de la duplication dans `removeDiscovery()`
+
+### 🛠️ Améliorations
+- Migration automatique pour les appareils existants sans `haDeviceType`
+- Fonction `publishDeviceDiscovery()` unifiée pour gérer tous les types
+- Gestion correcte des commandes MQTT selon le type HA (cover/switch)
+
 ## [2.0.7] - 2025-12-29
 
 ### 🔧 Corrections

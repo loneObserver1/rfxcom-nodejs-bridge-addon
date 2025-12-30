@@ -199,12 +199,22 @@
                 <h2>➕ Ajouter un appareil</h2>
                 <form id="addDeviceForm">
                     <div class="form-group">
-                        <label for="deviceType">Type d'appareil *</label>
+                        <label for="deviceType">Protocole RFXCOM *</label>
                         <select id="deviceType" name="type" required>
-                            <option value="">Sélectionnez un type</option>
+                            <option value="">Sélectionnez un protocole</option>
                             <option value="ARC">ARC (Volet)</option>
                             <option value="AC">AC (Prise DIO Chacon)</option>
                         </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="haDeviceType">Type dans Home Assistant *</label>
+                        <select id="haDeviceType" name="haDeviceType" required>
+                            <option value="">Sélectionnez un type</option>
+                            <option value="cover">Volet (Cover)</option>
+                            <option value="switch">Prise (Switch)</option>
+                            <option value="sensor">Capteur (Sensor)</option>
+                        </select>
+                        <small style="color: #666;">Choisissez comment cet appareil apparaîtra dans Home Assistant</small>
                     </div>
                     <div class="form-group">
                         <label for="deviceName">Nom de l'appareil *</label>
@@ -304,7 +314,8 @@
                         <div class="device-info">
                             <h3>${device.name}</h3>
                             <p>
-                                Type: ${device.type} |
+                                Protocole: ${device.type} |
+                                Type HA: ${device.haDeviceType || (device.type === 'ARC' ? 'cover' : device.type === 'AC' ? 'switch' : 'sensor')} |
                                 ID: ${deviceId} |
                                 <span class="status ${statusClass}">${statusText}</span>
                             </p>
@@ -334,6 +345,7 @@
                                 <button class="btn-small" onclick="sendAcCommand('${deviceId}', 'off')">OFF</button>
                             ` : ''}
                             <button class="btn-small btn-info" onclick="renameDevice('${deviceId}')">Renommer</button>
+                            <button class="btn-small btn-info" onclick="changeDeviceType('${deviceId}')">Modifier type</button>
                             <button class="btn-small btn-danger" onclick="deleteDevice('${deviceId}')">Supprimer</button>
                         </div>
                     </div>
@@ -347,6 +359,7 @@
             const arcFields = document.getElementById('arcFields');
             const acFields = document.getElementById('acFields');
             const acDeviceId = document.getElementById('acDeviceId');
+            const haDeviceTypeSelect = document.getElementById('haDeviceType');
             
             // Masquer tous les champs
             arcFields.style.display = 'none';
@@ -355,6 +368,17 @@
             // Réinitialiser les champs requis
             if (acDeviceId) {
                 acDeviceId.removeAttribute('required');
+            }
+            
+            // Définir le type HA par défaut selon le protocole
+            if (haDeviceTypeSelect) {
+                if (deviceType === 'ARC') {
+                    haDeviceTypeSelect.value = 'cover'; // Par défaut: volet pour ARC
+                } else if (deviceType === 'AC') {
+                    haDeviceTypeSelect.value = 'switch'; // Par défaut: prise pour AC
+                } else {
+                    haDeviceTypeSelect.value = '';
+                }
             }
             
             // Afficher les champs selon le type
@@ -382,12 +406,20 @@
             let endpoint;
             let data;
 
+            // Récupérer le type HA
+            const haDeviceType = formData.get('haDeviceType');
+            if (!haDeviceType) {
+                showAlert('❌ Veuillez sélectionner un type pour Home Assistant', 'error');
+                return;
+            }
+
             if (deviceType === 'ARC') {
                 endpoint = '/api/devices/arc';
                 const houseCode = formData.get('houseCode');
                 const unitCode = formData.get('unitCode');
                 data = {
                     name: formData.get('name'),
+                    haDeviceType: haDeviceType,
                     // Envoyer undefined si vide pour génération automatique
                     houseCode: houseCode && houseCode.trim() !== '' ? houseCode : undefined,
                     unitCode: unitCode && unitCode.trim() !== '' ? parseInt(unitCode) : undefined
@@ -411,6 +443,7 @@
                 
                 data = {
                     name: formData.get('name'),
+                    haDeviceType: haDeviceType,
                     deviceId: deviceId,
                     unitCode: unitCode
                 };
@@ -436,6 +469,11 @@
                     document.getElementById('acFields').style.display = 'none';
                     if (document.getElementById('acDeviceId')) {
                         document.getElementById('acDeviceId').removeAttribute('required');
+                    }
+                    // Réinitialiser le type HA
+                    const haDeviceTypeSelect = document.getElementById('haDeviceType');
+                    if (haDeviceTypeSelect) {
+                        haDeviceTypeSelect.value = '';
                     }
                     loadDevices();
                 } else {
@@ -762,6 +800,79 @@
 
                 if (result.status === 'success') {
                     showAlert(`✅ Appareil renommé en "${newName}"`, 'success');
+                    await loadDevices(); // Recharger la liste des appareils
+                } else {
+                    showAlert('❌ ' + result.error, 'error');
+                }
+            } catch (error) {
+                showAlert('Erreur: ' + error.message, 'error');
+            }
+        }
+
+        // Modifier le type d'un appareil (haDeviceType)
+        async function changeDeviceType(deviceId) {
+            try {
+                // Récupérer le type actuel de l'appareil
+                const devicesArray = await fetchDevices();
+                const device = devicesArray.find(d => {
+                    const id = d.id || (d.type === 'ARC' ? `ARC_${d.houseCode}_${d.unitCode}` : `AC_${d.deviceId}_${d.unitCode}`);
+                    return id === deviceId;
+                });
+
+                if (!device) {
+                    showAlert('❌ Appareil non trouvé', 'error');
+                    return;
+                }
+
+                const currentType = device.haDeviceType || 
+                    (device.type === 'ARC' ? 'cover' : 
+                     device.type === 'AC' ? 'switch' : 'sensor');
+                
+                const typeLabels = {
+                    'cover': 'Volet (Cover)',
+                    'switch': 'Prise (Switch)',
+                    'sensor': 'Capteur (Sensor)'
+                };
+
+                const newType = prompt(
+                    `Modifier le type Home Assistant pour "${device.name}"\n\n` +
+                    `Type actuel: ${typeLabels[currentType]}\n\n` +
+                    `Types disponibles:\n` +
+                    `- cover (Volet)\n` +
+                    `- switch (Prise)\n` +
+                    `- sensor (Capteur)\n\n` +
+                    `Entrez le nouveau type:`,
+                    currentType
+                );
+
+                if (newType === null) {
+                    return; // L'utilisateur a annulé
+                }
+
+                const normalizedType = newType.trim().toLowerCase();
+                const validTypes = ['cover', 'switch', 'sensor'];
+                
+                if (!validTypes.includes(normalizedType)) {
+                    showAlert(`❌ Type invalide. Types valides: ${validTypes.join(', ')}`, 'error');
+                    return;
+                }
+
+                if (normalizedType === currentType) {
+                    showAlert('ℹ️ Le type est déjà défini sur cette valeur', 'info');
+                    return;
+                }
+
+                const encodedDeviceId = encodeURIComponent(deviceId);
+                const response = await fetch(`${API_BASE}/api/devices/${encodedDeviceId}/type`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ haDeviceType: normalizedType })
+                });
+
+                const result = await response.json();
+
+                if (result.status === 'success') {
+                    showAlert(`✅ Type modifié: ${typeLabels[currentType]} → ${typeLabels[normalizedType]}`, 'success');
                     await loadDevices(); // Recharger la liste des appareils
                 } else {
                     showAlert('❌ ' + result.error, 'error');
