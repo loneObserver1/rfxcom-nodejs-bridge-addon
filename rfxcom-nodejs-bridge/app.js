@@ -273,46 +273,45 @@ function initializeMQTT() {
                 if (deviceType === 'cover' && device && haDeviceType === 'cover') {
                     // Pour ARC, utiliser lighting1Handler
                     if (device.type === 'ARC' && lighting1Handler) {
-                    const device = devices[deviceId];
-                    // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
-
-                    if (commandType === 'set') {
-                        // Commandes: OPEN, CLOSE, STOP
-                        const messageStr = message.toString().trim();
-                        log('info', `🎯 Commande ARC reçue: ${messageStr}`);
-                        
-                        if (messageStr === 'OPEN' || messageStr === 'open') {
-                            lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
-                                if (error) {
-                                    log('error', `❌ Erreur commande OPEN: ${error.message}`);
-                                } else {
-                                    log('info', `✅ Commande OPEN envoyée à ${device.name}`);
-                                    if (mqttHelper) {
-                                        mqttHelper.publishCoverState(deviceId, 'open');
+                        // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
+                        if (commandType === 'set') {
+                            // Commandes: OPEN, CLOSE, STOP
+                            const messageStr = message.toString().trim();
+                            log('info', `🎯 Commande ARC reçue: ${messageStr}`);
+                            
+                            if (messageStr === 'OPEN' || messageStr === 'open') {
+                                lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande OPEN: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande OPEN envoyée à ${device.name}`);
+                                        if (mqttHelper) {
+                                            mqttHelper.publishCoverState(deviceId, 'open');
+                                        }
                                     }
-                                }
-                            });
-                        } else if (messageStr === 'CLOSE' || messageStr === 'close') {
-                            lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
-                                if (error) {
-                                    log('error', `❌ Erreur commande CLOSE: ${error.message}`);
-                                } else {
-                                    log('info', `✅ Commande CLOSE envoyée à ${device.name}`);
-                                    if (mqttHelper) {
-                                        mqttHelper.publishCoverState(deviceId, 'closed');
+                                });
+                            } else if (messageStr === 'CLOSE' || messageStr === 'close') {
+                                lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande CLOSE: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande CLOSE envoyée à ${device.name}`);
+                                        if (mqttHelper) {
+                                            mqttHelper.publishCoverState(deviceId, 'closed');
+                                        }
                                     }
-                                }
-                            });
-                        } else if (messageStr === 'STOP' || messageStr === 'stop') {
-                            lighting1Handler.stop(device.houseCode, device.unitCode, (error) => {
-                                if (error) {
-                                    log('error', `❌ Erreur commande STOP: ${error.message}`);
-                                } else {
-                                    log('info', `✅ Commande STOP envoyée à ${device.name}`);
-                                }
-                            });
-                        } else {
-                            log('warn', `⚠️ Commande ARC inconnue: ${messageStr}`);
+                                });
+                            } else if (messageStr === 'STOP' || messageStr === 'stop') {
+                                lighting1Handler.stop(device.houseCode, device.unitCode, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande STOP: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande STOP envoyée à ${device.name}`);
+                                    }
+                                });
+                            } else {
+                                log('warn', `⚠️ Commande ARC inconnue: ${messageStr}`);
+                            }
                         }
                     }
                     // Pour AC avec haDeviceType='cover', utiliser lighting2Handler
@@ -371,35 +370,36 @@ function initializeMQTT() {
                         // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
                         const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
 
-                    if (commandType === 'set') {
-                        // Commandes: ON, OFF
-                        const messageStr = message.toString().trim();
-                        log('info', `🎯 Commande AC reçue: ${messageStr} pour ${device.name} (${deviceIdFormatted})`);
-                        
-                        if (messageStr === 'ON' || messageStr === 'on') {
-                            lighting2Handler.switchOn(deviceIdFormatted, (error) => {
-                                if (error) {
-                                    log('error', `❌ Erreur commande ON: ${error.message}`);
-                                } else {
-                                    log('info', `✅ Commande ON envoyée à ${device.name}`);
-                                    if (mqttHelper) {
-                                        mqttHelper.publishSwitchState(deviceId, 'ON');
+                        if (commandType === 'set') {
+                            // Commandes: ON, OFF
+                            const messageStr = message.toString().trim();
+                            log('info', `🎯 Commande AC reçue: ${messageStr} pour ${device.name} (${deviceIdFormatted})`);
+                            
+                            if (messageStr === 'ON' || messageStr === 'on') {
+                                lighting2Handler.switchOn(deviceIdFormatted, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande ON: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande ON envoyée à ${device.name}`);
+                                        if (mqttHelper) {
+                                            mqttHelper.publishSwitchState(deviceId, 'ON');
+                                        }
                                     }
-                                }
-                            });
-                        } else if (messageStr === 'OFF' || messageStr === 'off') {
-                            lighting2Handler.switchOff(deviceIdFormatted, (error) => {
-                                if (error) {
-                                    log('error', `❌ Erreur commande OFF: ${error.message}`);
-                                } else {
-                                    log('info', `✅ Commande OFF envoyée à ${device.name}`);
-                                    if (mqttHelper) {
-                                        mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                });
+                            } else if (messageStr === 'OFF' || messageStr === 'off') {
+                                lighting2Handler.switchOff(deviceIdFormatted, (error) => {
+                                    if (error) {
+                                        log('error', `❌ Erreur commande OFF: ${error.message}`);
+                                    } else {
+                                        log('info', `✅ Commande OFF envoyée à ${device.name}`);
+                                        if (mqttHelper) {
+                                            mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                        }
                                     }
-                                }
-                            });
-                        } else {
-                            log('warn', `⚠️ Commande AC inconnue: ${messageStr}`);
+                                });
+                            } else {
+                                log('warn', `⚠️ Commande AC inconnue: ${messageStr}`);
+                            }
                         }
                     }
                     // Pour ARC avec haDeviceType='switch', utiliser lighting1Handler
