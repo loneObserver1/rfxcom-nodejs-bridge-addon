@@ -46,6 +46,7 @@ Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC
 ## 📋 Table des matières
 
 - [Types d'appareils supportés](#types-dappareils-supportés)
+- [Ajouter un appareil](#-ajouter-un-appareil)
 - [Appairage des volets ARC](#appairage-des-volets-arc)
 - [Appairage des prises AC (DIO Chacon)](#appairage-des-prises-ac-dio-chacon)
 - [Commandes disponibles](#commandes-disponibles)
