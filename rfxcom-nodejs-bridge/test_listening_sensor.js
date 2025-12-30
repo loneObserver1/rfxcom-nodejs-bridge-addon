@@ -81,12 +81,14 @@ function formatMessage(msg) {
     console.log(`   - msg.subtype: ${msg.subtype} (${typeof msg.subtype})`);
 
     // Vérifier si c'est un message TEMP_HUM selon les critères du code
-    // Support pour "temperaturerain1" (Alecto) et "tempHumidity" (générique)
+    // Support pour "temperaturerain1" (Alecto temp+rain), "temperaturehumidity1" (Alecto TH13/WS1700), et "tempHumidity" (générique)
     const isTempHum =
         msg.type === 'tempHumidity' ||
         msg.type === 'TEMP_HUM' ||
         msg.packetType === 'TEMP_HUM' ||
-        msg.type === 'temperaturerain1';
+        msg.type === 'temperaturerain1' ||
+        msg.type === 'temperaturehumidity1' ||
+        msg.subtype === 13; // TH13
 
     console.log(`\n✅ Est-ce un message TEMP_HUM/Alecto ? ${isTempHum ? 'OUI' : 'NON'}`);
 
@@ -230,6 +232,21 @@ async function main() {
         }
         console.log('\n' + '='.repeat(80) + '\n');
     });
+    
+    // Écouter spécifiquement les événements "temperaturehumidity1" pour les sondes Alecto TH13/WS1700
+    rfxtrx.on('temperaturehumidity1', (msg) => {
+        messageCount++;
+        tempHumCount++;
+        console.log(`\n${'='.repeat(80)}`);
+        console.log(`🎯 MESSAGE ALECTO TH13/WS1700 TEMPERATUREHUMIDITY1 #${tempHumCount} (message total #${messageCount})`);
+        console.log('='.repeat(80));
+        console.log('\n📋 Message Alecto TH13/WS1700 reçu:');
+        console.log(JSON.stringify(msg, null, 2));
+        if (msg && typeof msg === 'object') {
+            formatMessage(msg);
+        }
+        console.log('\n' + '='.repeat(80) + '\n');
+    });
 
     // Écouter tous les messages
     rfxtrx.on('receive', (evt, msg) => {
@@ -268,6 +285,28 @@ async function main() {
                             console.log(`      - Niveau batterie: ${batteryLevel}`);
                             console.log(`      - RSSI: ${rssi}`);
                         }
+                    } else if (packetType === 0x01) {
+                        console.log(`   🎯 C'EST UN PACKET TYPE 0x01 (peut être TH13/WS1700) !`);
+                        // Vérifier si c'est un message TH13 (se termine par "RFXCOM")
+                        if (evt.length >= 19) {
+                            const endText = String.fromCharCode.apply(String, evt.slice(evt.length - 6));
+                            if (endText === "RFXCOM" || endText === "XCOM") {
+                                console.log(`   ✅ Message se termine par "${endText}" → Probablement TH13/WS1700`);
+                                // Parser selon le format TH13: data[4-5] = temp, data[5] = hum_raw
+                                if (evt.length >= 10) {
+                                    const tempInteger = evt[6]; // data[4] dans le format décodé
+                                    const tempFraction = evt[7]; // data[5] dans le format décodé
+                                    const temperature = tempInteger + (tempFraction / 256);
+                                    const humidityRaw = evt[7] & 0x7F;
+                                    const humidity = Math.round(humidityRaw * 100 / 327);
+                                    const sensorId = "0x" + evt.slice(4, 6).map(b => b.toString(16).padStart(2, '0')).join("").toUpperCase();
+                                    console.log(`   📊 Données parsées manuellement (TH13):`);
+                                    console.log(`      - Sensor ID: ${sensorId}`);
+                                    console.log(`      - Température: ${temperature.toFixed(1)}°C`);
+                                    console.log(`      - Humidité: ${humidity}%`);
+                                }
+                            }
+                        }
                     }
                 }
             } else {
@@ -290,11 +329,14 @@ async function main() {
                 msg.type === 'tempHumidity' ||
                 msg.type === 'TEMP_HUM' ||
                 msg.packetType === 'TEMP_HUM' ||
-                msg.type === 'temperaturerain1';
+                msg.type === 'temperaturerain1' ||
+                msg.type === 'temperaturehumidity1' ||
+                msg.subtype === 13; // TH13
 
             if (isTempHum) {
                 tempHumCount++;
-                console.log(`\n🎯 MESSAGE TEMP_HUM/ALECTO #${tempHumCount} (message total #${messageCount})`);
+                const sensorType = msg.type === 'temperaturehumidity1' || msg.subtype === 13 ? 'TH13/WS1700' : 'Alecto';
+                console.log(`\n🎯 MESSAGE TEMP_HUM/${sensorType} #${tempHumCount} (message total #${messageCount})`);
             } else {
                 console.log(`\n📨 Type de message: ${msg.type || msg.packetType || 'inconnu'}`);
             }
@@ -307,7 +349,9 @@ async function main() {
                 evt.type === 'tempHumidity' ||
                 evt.type === 'TEMP_HUM' ||
                 evt.packetType === 'TEMP_HUM' ||
-                evt.type === 'temperaturerain1';
+                evt.type === 'temperaturerain1' ||
+                evt.type === 'temperaturehumidity1' ||
+                evt.subtype === 13; // TH13
             
             if (isTempHum) {
                 tempHumCount++;
@@ -358,4 +402,5 @@ main().catch((err) => {
     console.error('❌ Erreur fatale:', err);
     process.exit(1);
 });
+
 

@@ -5,6 +5,22 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.3] - 2025-12-30
+
+### 🔧 Corrections
+
+- **Correction du build Docker** :
+  - Ajout de `git` dans le Dockerfile pour permettre l'installation de la dépendance `rfxcom` depuis GitHub
+  - Le build Docker échouait avec l'erreur "spawn git" car git n'était pas installé dans l'image
+
+### 🛠️ Améliorations
+
+- **Script de diagnostic pour les capteurs** :
+  - Création du script `test_listening_sensor.js` pour diagnostiquer les problèmes de détection des capteurs TEMP_HUM
+  - Support amélioré pour les capteurs Alecto (TH13/WS1700, temperaturerain1, temperaturehumidity1)
+  - Affichage détaillé de tous les champs des messages RFXCOM reçus
+  - Analyse automatique des messages pour identifier les problèmes de détection
+
 ## [2.1.2] - 2025-12-30
 
 ### ✨ Nouvelles fonctionnalités

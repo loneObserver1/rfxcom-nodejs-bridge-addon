@@ -2,9 +2,25 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.1.1**
+**Version actuelle : 2.1.3**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.3
+- **Correction du build Docker** :
+  - Ajout de `git` dans le Dockerfile pour permettre l'installation de la dépendance `rfxcom` depuis GitHub
+  - Le build Docker fonctionne maintenant correctement
+
+- **Script de diagnostic pour les capteurs** :
+  - Nouveau script `test_listening_sensor.js` pour diagnostiquer les problèmes de détection des capteurs TEMP_HUM
+  - Support amélioré pour les capteurs Alecto (TH13/WS1700)
+  - Affichage détaillé de tous les champs des messages RFXCOM reçus
+
+### Version 2.1.2
+- **Support des sondes Alecto TH13/WS1700** :
+  - Détection automatique des sondes TH13/WS1700
+  - Support de l'événement `temperaturehumidity1` du package rfxcom modifié
+  - Intégration automatique dans Home Assistant via MQTT Discovery
 
 ### Version 2.1.1
 - **Correction de la récupération du Unit Code dans le formulaire AC** :

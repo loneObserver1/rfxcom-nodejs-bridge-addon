@@ -10,7 +10,8 @@ RUN \
     make \
     g++ \
     linux-headers \
-    udev
+    udev \
+    git
 
 # Copy package.json and install dependencies
 COPY package.json /app/
