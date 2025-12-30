@@ -1517,13 +1517,15 @@ app.post('/api/devices/ac', (req, res) => {
 
         // Pour unitCode: doit être un nombre valide (0 est valide)
         // Vérifier d'abord si c'est un nombre, sinon essayer de parser
+        // Ignorer aussi "auto" qui pourrait être envoyé par erreur
         let parsedUnitCode = undefined;
         if (finalUnitCode !== undefined && finalUnitCode !== null) {
             if (typeof finalUnitCode === 'number') {
                 parsedUnitCode = finalUnitCode;
             } else {
-                const str = String(finalUnitCode).trim();
-                if (str !== '') {
+                const str = String(finalUnitCode).trim().toLowerCase();
+                // Ignorer "auto" et les chaînes vides
+                if (str !== '' && str !== 'auto') {
                     const parsed = parseInt(str, 10);
                     if (!isNaN(parsed)) {
                         parsedUnitCode = parsed;

@@ -2,9 +2,14 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.1.0**
+**Version actuelle : 2.1.1**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.1
+- **Correction de la récupération du Unit Code dans le formulaire AC** :
+  - Le formulaire AC récupère maintenant correctement la valeur du champ Unit Code
+  - Correction du problème où le formulaire récupérait le champ ARC au lieu du champ AC
 
 ### Version 2.1.0
 - **Correction de la prise en compte du Unit Code pour les appareils AC** :
