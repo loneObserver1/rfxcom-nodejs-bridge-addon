@@ -2,9 +2,16 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.0.8**
+**Version actuelle : 2.0.9**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.0.9
+- **Récupération automatique des appareils depuis MQTT** :
+  - Si `devices.json` n'existe pas ou est vide au démarrage, tentative de récupération automatique depuis les topics de découverte Home Assistant
+  - Les appareils sont automatiquement reconstruits depuis les configurations MQTT existantes
+  - Sauvegarde automatique des appareils récupérés
+  - Plus besoin de recréer manuellement les appareils après une réinstallation
 
 ### Version 2.0.8
 - **Choix du type d'appareil indépendant du protocole RFXCOM** : 

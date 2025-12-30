@@ -5,6 +5,20 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.0.9] - 2025-12-29
+
+### ✨ Nouvelles fonctionnalités
+- **Récupération automatique des appareils depuis MQTT** :
+  - Si `devices.json` n'existe pas ou est vide au démarrage, tentative de récupération automatique depuis les topics de découverte Home Assistant
+  - Parse les topics `homeassistant/{type}/rfxcom/{deviceId}/config` pour reconstruire les appareils
+  - Support de la récupération pour ARC, AC et TEMP_HUM
+  - Sauvegarde automatique des appareils récupérés dans `devices.json`
+  - Republication automatique des découvertes après récupération
+
+### 🛠️ Améliorations
+- Amélioration de la gestion des erreurs lors du chargement des appareils
+- Meilleure résilience en cas de perte du fichier `devices.json`
+
 ## [2.0.8] - 2025-12-29
 
 ### ✨ Nouvelles fonctionnalités
