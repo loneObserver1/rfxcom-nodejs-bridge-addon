@@ -96,8 +96,9 @@ function loadDevices() {
                 }
         } else {
             devices = {};
-            log('info', '📦 Aucun appareil enregistré, création du fichier devices.json');
-            saveDevices(); // Créer le fichier avec un objet vide
+            log('info', '📦 Aucun appareil enregistré, le fichier devices.json sera créé');
+            log('info', '💡 Si MQTT est disponible, tentative de récupération des appareils depuis Home Assistant...');
+            // Ne pas créer le fichier tout de suite, attendre la récupération depuis MQTT
         }
     } catch (error) {
         log('error', `❌ Erreur lors du chargement des appareils: ${error.message}`);
@@ -171,7 +172,7 @@ function findFreeAcCode() {
     };
 
     const unitCodes = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
-    
+
     // Essayer jusqu'à 100 fois pour trouver une combinaison libre
     for (let attempt = 0; attempt < 100; attempt++) {
         const deviceId = generateRandomDeviceId();
@@ -252,21 +253,21 @@ function initializeMQTT() {
             // Format: rfxcom/cover/{deviceId}/set ou rfxcom/switch/{deviceId}/set
             const parts = topic.split('/');
             log('debug', `📋 Parties du topic: ${JSON.stringify(parts)}`);
-            
+
             if (parts.length >= 4 && parts[0] === 'rfxcom') {
                 const deviceType = parts[1]; // 'cover' ou 'switch'
                 const deviceId = parts[2];
                 const commandType = parts[3];
 
                 log('debug', `🔍 Type: ${deviceType}, DeviceId: ${deviceId}, CommandType: ${commandType}`);
-                
+
                 // Récupérer le haDeviceType de l'appareil
                 const device = devices[deviceId];
-                const haDeviceType = device?.haDeviceType || 
-                    (device?.type === 'ARC' ? 'cover' : 
-                     device?.type === 'AC' ? 'switch' : 
+                const haDeviceType = device?.haDeviceType ||
+                    (device?.type === 'ARC' ? 'cover' :
+                     device?.type === 'AC' ? 'switch' :
                      device?.type === 'TEMP_HUM' ? 'sensor' : 'switch');
-                
+
                 log('debug', `🔍 Device existe: ${!!device}, Type device: ${device?.type}, haDeviceType: ${haDeviceType}, Handler: ${deviceType === 'cover' ? !!lighting1Handler : !!lighting2Handler}`);
 
                 // Gestion des volets (cover) - ARC ou AC avec haDeviceType='cover'
@@ -278,7 +279,7 @@ function initializeMQTT() {
                             // Commandes: OPEN, CLOSE, STOP
                             const messageStr = message.toString().trim();
                             log('info', `🎯 Commande ARC reçue: ${messageStr}`);
-                            
+
                             if (messageStr === 'OPEN' || messageStr === 'open') {
                                 lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
                                     if (error) {
@@ -318,11 +319,11 @@ function initializeMQTT() {
                     else if (device.type === 'AC' && lighting2Handler) {
                         // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
                         const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
-                        
+
                         if (commandType === 'set') {
                             const messageStr = message.toString().trim();
                             log('info', `🎯 Commande AC (cover) reçue: ${messageStr}`);
-                            
+
                             if (messageStr === 'OPEN' || messageStr === 'open') {
                                 lighting2Handler.switchOn(deviceIdFormatted, (error) => {
                                     if (error) {
@@ -374,7 +375,7 @@ function initializeMQTT() {
                             // Commandes: ON, OFF
                             const messageStr = message.toString().trim();
                             log('info', `🎯 Commande AC reçue: ${messageStr} pour ${device.name} (${deviceIdFormatted})`);
-                            
+
                             if (messageStr === 'ON' || messageStr === 'on') {
                                 lighting2Handler.switchOn(deviceIdFormatted, (error) => {
                                     if (error) {
@@ -407,7 +408,7 @@ function initializeMQTT() {
                         if (commandType === 'set') {
                             const messageStr = message.toString().trim();
                             log('info', `🎯 Commande ARC (switch) reçue: ${messageStr}`);
-                            
+
                             if (messageStr === 'ON' || messageStr === 'on') {
                                 lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
                                     if (error) {
@@ -496,7 +497,7 @@ function initializeRFXCOMAsync() {
                     log('error', `❌ Erreur RFXCOM: ${err.message}`);
                     // Ne pas fermer automatiquement, laisser l'utilisateur gérer
                 });
-                
+
                 rfxtrx.on('disconnect', () => {
                     log('warn', '⚠️ RFXCOM déconnecté');
                     rfxtrx = null;
@@ -506,24 +507,24 @@ function initializeRFXCOMAsync() {
 
                 // Créer le handler pour Lighting1 (ARC, etc.)
                 lighting1Handler = new rfxcom.Lighting1(rfxtrx, rfxcom.lighting1.ARC);
-                
+
                 // Ajouter les méthodes wrapper pour ARC (UP/DOWN/STOP)
                 // car l'API rfxcom n'expose que switchOn, switchOff, chime
                 lighting1Handler.switchUp = function(houseCode, unitCode, callback) {
                     // Pour ARC, switchOn (0x01) = UP (monter)
                     return this.switchOn(`${houseCode}${unitCode}`, callback);
                 };
-                
+
                 lighting1Handler.switchDown = function(houseCode, unitCode, callback) {
                     // Pour ARC, switchOff (0x00) = DOWN (descendre)
                     return this.switchOff(`${houseCode}${unitCode}`, callback);
                 };
-                
+
                 lighting1Handler.stop = function(houseCode, unitCode, callback) {
                     // Pour ARC, chime (0x07) peut être utilisé comme STOP
                     return this.chime(`${houseCode}${unitCode}`, callback);
                 };
-                
+
                 // Créer le handler pour Lighting2 (AC, DIO Chacon, etc.)
                 lighting2Handler = new rfxcom.Lighting2(rfxtrx, rfxcom.lighting2.AC);
 
@@ -566,9 +567,12 @@ function initializeRFXCOMAsync() {
                             // Test simple de connexion : publier le statut
                             log('info', '✅ Test de connexion MQTT réussi');
 
-                            // Publier les entités existantes s'il y en a
+                            // Si aucun appareil n'est chargé, essayer de les récupérer depuis MQTT
                             const deviceCount = Object.keys(devices).length;
-                            if (deviceCount > 0) {
+                            if (deviceCount === 0) {
+                                log('info', '🔄 Tentative de récupération des appareils depuis les topics de découverte MQTT...');
+                                recoverDevicesFromMQTT();
+                            } else {
                                 setTimeout(() => {
                                     log('info', `📡 Publication des ${deviceCount} entité(s) Home Assistant existante(s)...`);
                                     Object.keys(devices).forEach(deviceId => {
@@ -576,8 +580,6 @@ function initializeRFXCOMAsync() {
                                         mqttHelper.publishDeviceDiscovery({ ...device, id: deviceId });
                                     });
                                 }, 1000);
-                            } else {
-                                log('info', '📡 Aucun appareil enregistré, prêt à en ajouter');
                             }
                         };
                     }
@@ -751,6 +753,161 @@ function handleReceivedMessage(msg) {
     }
 }
 
+// Fonction pour récupérer les appareils depuis les topics de découverte MQTT
+function recoverDevicesFromMQTT() {
+    if (!mqttHelper || !mqttHelper.connected || !mqttHelper.client) {
+        log('warn', '⚠️ MQTT non connecté, impossible de récupérer les appareils');
+        // Créer le fichier vide si on ne peut pas récupérer
+        if (Object.keys(devices).length === 0) {
+            saveDevices();
+        }
+        return;
+    }
+
+    log('info', '🔍 Recherche des appareils dans les topics de découverte MQTT...');
+
+    // S'abonner à tous les topics de découverte RFXCOM
+    const discoveryTopics = [
+        'homeassistant/cover/rfxcom/+/config',
+        'homeassistant/switch/rfxcom/+/config',
+        'homeassistant/sensor/rfxcom/+/config'
+    ];
+
+    let recoveredCount = 0;
+
+    // Créer le listener avant le timeout pour pouvoir le nettoyer
+    const discoveryMessageListener = (topic, message) => {
+        try {
+            // Ignorer les messages qui ne sont pas des configs de découverte
+            if (!topic.includes('/config')) {
+                return; // Laisser le handler normal gérer les autres messages
+            }
+
+            // Parser le message JSON
+            const config = JSON.parse(message.toString());
+
+            // Extraire le deviceId depuis le topic
+            // Format: homeassistant/{type}/rfxcom/{deviceId}/config
+            const topicParts = topic.split('/');
+            if (topicParts.length < 4) return;
+
+            const haDeviceType = topicParts[1]; // 'cover', 'switch', 'sensor'
+            const deviceId = topicParts[3]; // L'ID de l'appareil
+
+            // Ignorer si c'est un sensor (temp/hum) car ils sont gérés différemment
+            if (haDeviceType === 'sensor' && (deviceId.includes('_temperature') || deviceId.includes('_humidity'))) {
+                return; // On gère les sensors différemment
+            }
+
+            // Vérifier si l'appareil existe déjà
+            if (devices[deviceId]) {
+                log('debug', `📋 Appareil ${deviceId} déjà présent, ignoré`);
+                return;
+            }
+
+            // Extraire les informations depuis unique_id ou device.identifiers
+            const uniqueId = config.unique_id || '';
+            const name = config.name || deviceId;
+
+            // Parser le deviceId pour déterminer le type RFXCOM
+            let device = null;
+
+            if (deviceId.startsWith('ARC_')) {
+                // Format: ARC_A_1
+                const match = deviceId.match(/^ARC_([A-P])_(\d+)$/);
+                if (match) {
+                    device = {
+                        type: 'ARC',
+                        haDeviceType: haDeviceType === 'cover' ? 'cover' : 'switch',
+                        name: name,
+                        houseCode: match[1],
+                        unitCode: parseInt(match[2]),
+                        recovered: true,
+                        recoveredAt: new Date().toISOString()
+                    };
+                }
+            } else if (deviceId.startsWith('AC_')) {
+                // Format: AC_XXXXXX_0
+                const match = deviceId.match(/^AC_([A-F0-9]+)_(\d+)$/);
+                if (match) {
+                    device = {
+                        type: 'AC',
+                        haDeviceType: haDeviceType === 'cover' ? 'cover' : 'switch',
+                        name: name,
+                        deviceId: match[1].toUpperCase(),
+                        unitCode: parseInt(match[2]),
+                        recovered: true,
+                        recoveredAt: new Date().toISOString()
+                    };
+                }
+            } else if (deviceId.startsWith('TEMP_HUM_')) {
+                // Format: TEMP_HUM_XXXXX
+                const sensorId = deviceId.replace('TEMP_HUM_', '');
+                device = {
+                    type: 'TEMP_HUM',
+                    haDeviceType: 'sensor',
+                    name: name,
+                    sensorId: sensorId,
+                    recovered: true,
+                    recoveredAt: new Date().toISOString()
+                };
+            }
+
+            if (device) {
+                devices[deviceId] = device;
+                recoveredCount++;
+                log('info', `✅ Appareil récupéré depuis MQTT: ${name} (${deviceId})`);
+            } else {
+                log('debug', `⚠️ Impossible de parser l'appareil ${deviceId} depuis le topic ${topic}`);
+            }
+        } catch (error) {
+            log('debug', `⚠️ Erreur lors du parsing du message MQTT sur ${topic}: ${error.message}`);
+        }
+    };
+
+    // Ajouter le listener temporaire directement sur le client
+    mqttHelper.client.on('message', discoveryMessageListener);
+
+    const timeout = setTimeout(() => {
+        // Retirer le listener temporaire
+        mqttHelper.client.removeListener('message', discoveryMessageListener);
+
+        log('info', `✅ Récupération terminée: ${recoveredCount} appareil(s) récupéré(s) depuis MQTT`);
+        if (recoveredCount > 0) {
+            saveDevices();
+            log('info', '💾 Appareils sauvegardés dans devices.json');
+
+            // Républier les découvertes pour s'assurer qu'elles sont à jour
+            setTimeout(() => {
+                log('info', `📡 Republication des ${recoveredCount} entité(s) récupérée(s)...`);
+                Object.keys(devices).forEach(deviceId => {
+                    const device = devices[deviceId];
+                    mqttHelper.publishDeviceDiscovery({ ...device, id: deviceId });
+                });
+            }, 1000);
+        } else {
+            log('info', '📦 Aucun appareil trouvé dans MQTT, création du fichier devices.json vide');
+            saveDevices();
+        }
+
+        // Se désabonner des topics
+        discoveryTopics.forEach(topic => {
+            mqttHelper.client.unsubscribe(topic);
+        });
+    }, 5000); // Attendre 5 secondes pour recevoir tous les messages
+
+    discoveryTopics.forEach(topic => {
+        mqttHelper.client.subscribe(topic, { qos: 1 }, (error) => {
+            if (error) {
+                log('error', `❌ Erreur lors de l'abonnement à ${topic}: ${error.message}`);
+            } else {
+                log('debug', `✅ Abonné au topic: ${topic}`);
+            }
+        });
+    });
+
+}
+
 // API Express
 const app = express();
 
@@ -893,7 +1050,7 @@ app.post('/api/devices/arc', (req, res) => {
 
         // Valeur par défaut pour haDeviceType : 'cover' pour ARC
         const haDeviceType = req.body.haDeviceType || 'cover';
-        
+
         devices[id] = {
             type: 'ARC',
             haDeviceType: haDeviceType, // 'cover', 'switch', ou 'sensor'
@@ -1397,7 +1554,7 @@ app.post('/api/devices/ac', (req, res) => {
 
         // Valeur par défaut pour haDeviceType : 'switch' pour AC
         const haDeviceType = req.body.haDeviceType || 'switch';
-        
+
         // Créer l'appareil
         devices[id] = {
             type: 'AC',
@@ -1740,10 +1897,10 @@ app.put('/api/devices/:id/type', (req, res) => {
             });
         }
 
-        const oldType = devices[deviceId].haDeviceType || 
-            (devices[deviceId].type === 'ARC' ? 'cover' : 
+        const oldType = devices[deviceId].haDeviceType ||
+            (devices[deviceId].type === 'ARC' ? 'cover' :
              devices[deviceId].type === 'AC' ? 'switch' : 'sensor');
-        
+
         devices[deviceId].haDeviceType = haDeviceType;
         saveDevices();
 
