@@ -5,6 +5,24 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.9] - 2025-01-02
+
+### 🔧 Corrections
+
+- **Correction du problème avec AUTO_DISCOVERY activé** :
+  - Amélioration du fallback dans le handler 'ready' pour enregistrer les listeners si receiverstarted n'est pas émis
+  - Ce fallback est crucial quand AUTO_DISCOVERY est activé car receiverstarted peut ne pas être émis dans certaines configurations
+  - S'assurer que rfxtrxReady est marqué à true même si receiverstarted n'est pas émis
+  - Les listeners sont maintenant enregistrés via le fallback si nécessaire
+  - Ajout de logs de diagnostic pour identifier les problèmes d'initialisation
+
+### 🛠️ Améliorations
+
+- **Gestion améliorée de l'initialisation avec AUTO_DISCOVERY** :
+  - Le fallback de 5 secondes enregistre maintenant aussi les listeners si receiverstarted n'est pas émis
+  - Logs améliorés pour diagnostiquer les problèmes d'initialisation
+  - Meilleure résilience quand AUTO_DISCOVERY est activé
+
 ## [2.1.8] - 2025-01-02
 
 ### 🔧 Corrections
