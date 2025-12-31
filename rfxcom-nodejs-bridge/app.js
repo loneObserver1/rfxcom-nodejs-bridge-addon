@@ -379,28 +379,54 @@ function initializeMQTT() {
                             const messageStr = message.toString().trim();
                             log('info', `🎯 Commande AC reçue: ${messageStr} pour ${device.name} (${deviceIdFormatted})`);
 
+                            // Vérifier que rfxtrx est bien initialisé
+                            if (!rfxtrx) {
+                                log('error', `❌ RFXCOM non initialisé (rfxtrx est null)`);
+                                return;
+                            }
+
                             if (messageStr === 'ON' || messageStr === 'on') {
-                                lighting2Handler.switchOn(deviceIdFormatted, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande ON: ${error.message}`);
-                                    } else {
-                                        log('info', `✅ Commande ON envoyée à ${device.name}`);
-                                        if (mqttHelper) {
-                                            mqttHelper.publishSwitchState(deviceId, 'ON');
+                                log('info', `📤 Envoi de la commande ON au module RFXCOM pour ${device.name}...`);
+                                try {
+                                    lighting2Handler.switchOn(deviceIdFormatted, (error) => {
+                                        if (error) {
+                                            log('error', `❌ Erreur commande ON: ${error.message}`);
+                                        } else {
+                                            log('info', `✅ Commande ON envoyée à ${device.name}`);
+                                            if (mqttHelper) {
+                                                mqttHelper.publishSwitchState(deviceId, 'ON');
+                                            }
                                         }
+                                    });
+                                    // Log immédiatement après l'appel pour confirmer que la méthode a été appelée
+                                    log('info', `📡 Méthode switchOn appelée pour ${deviceIdFormatted}`);
+                                } catch (err) {
+                                    log('error', `❌ Exception lors de l'appel switchOn: ${err.message}`);
+                                    if (LOG_LEVEL === 'debug') {
+                                        log('debug', `   Stack: ${err.stack}`);
                                     }
-                                });
+                                }
                             } else if (messageStr === 'OFF' || messageStr === 'off') {
-                                lighting2Handler.switchOff(deviceIdFormatted, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande OFF: ${error.message}`);
-                                    } else {
-                                        log('info', `✅ Commande OFF envoyée à ${device.name}`);
-                                        if (mqttHelper) {
-                                            mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                log('info', `📤 Envoi de la commande OFF au module RFXCOM pour ${device.name}...`);
+                                try {
+                                    lighting2Handler.switchOff(deviceIdFormatted, (error) => {
+                                        if (error) {
+                                            log('error', `❌ Erreur commande OFF: ${error.message}`);
+                                        } else {
+                                            log('info', `✅ Commande OFF envoyée à ${device.name}`);
+                                            if (mqttHelper) {
+                                                mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                            }
                                         }
+                                    });
+                                    // Log immédiatement après l'appel pour confirmer que la méthode a été appelée
+                                    log('info', `📡 Méthode switchOff appelée pour ${deviceIdFormatted}`);
+                                } catch (err) {
+                                    log('error', `❌ Exception lors de l'appel switchOff: ${err.message}`);
+                                    if (LOG_LEVEL === 'debug') {
+                                        log('debug', `   Stack: ${err.stack}`);
                                     }
-                                });
+                                }
                             } else {
                                 log('warn', `⚠️ Commande AC inconnue: ${messageStr}`);
                             }
@@ -412,28 +438,52 @@ function initializeMQTT() {
                             const messageStr = message.toString().trim();
                             log('info', `🎯 Commande ARC (switch) reçue: ${messageStr}`);
 
+                            // Vérifier que rfxtrx est bien initialisé
+                            if (!rfxtrx) {
+                                log('error', `❌ RFXCOM non initialisé (rfxtrx est null)`);
+                                return;
+                            }
+
                             if (messageStr === 'ON' || messageStr === 'on') {
-                                lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande ON: ${error.message}`);
-                                    } else {
-                                        log('info', `✅ Commande ON envoyée à ${device.name}`);
-                                        if (mqttHelper) {
-                                            mqttHelper.publishSwitchState(deviceId, 'ON');
+                                log('info', `📤 Envoi de la commande ON au module RFXCOM pour ${device.name}...`);
+                                try {
+                                    lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
+                                        if (error) {
+                                            log('error', `❌ Erreur commande ON: ${error.message}`);
+                                        } else {
+                                            log('info', `✅ Commande ON envoyée à ${device.name}`);
+                                            if (mqttHelper) {
+                                                mqttHelper.publishSwitchState(deviceId, 'ON');
+                                            }
                                         }
+                                    });
+                                    log('info', `📡 Méthode switchUp appelée pour ARC ${device.houseCode}${device.unitCode}`);
+                                } catch (err) {
+                                    log('error', `❌ Exception lors de l'appel switchUp: ${err.message}`);
+                                    if (LOG_LEVEL === 'debug') {
+                                        log('debug', `   Stack: ${err.stack}`);
                                     }
-                                });
+                                }
                             } else if (messageStr === 'OFF' || messageStr === 'off') {
-                                lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande OFF: ${error.message}`);
-                                    } else {
-                                        log('info', `✅ Commande OFF envoyée à ${device.name}`);
-                                        if (mqttHelper) {
-                                            mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                log('info', `📤 Envoi de la commande OFF au module RFXCOM pour ${device.name}...`);
+                                try {
+                                    lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
+                                        if (error) {
+                                            log('error', `❌ Erreur commande OFF: ${error.message}`);
+                                        } else {
+                                            log('info', `✅ Commande OFF envoyée à ${device.name}`);
+                                            if (mqttHelper) {
+                                                mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                            }
                                         }
+                                    });
+                                    log('info', `📡 Méthode switchDown appelée pour ARC ${device.houseCode}${device.unitCode}`);
+                                } catch (err) {
+                                    log('error', `❌ Exception lors de l'appel switchDown: ${err.message}`);
+                                    if (LOG_LEVEL === 'debug') {
+                                        log('debug', `   Stack: ${err.stack}`);
                                     }
-                                });
+                                }
                             } else {
                                 log('warn', `⚠️ Commande ARC (switch) inconnue: ${messageStr}`);
                             }
@@ -449,8 +499,12 @@ function initializeMQTT() {
                         log('warn', `⚠️ Type HA incorrect: ${haDeviceType} (attendu: cover) pour deviceId: ${deviceId}`);
                     } else if (deviceType === 'switch' && !lighting2Handler && device?.type === 'AC') {
                         log('error', `❌ lighting2Handler non initialisé`);
+                        log('error', `❌ RFXCOM peut ne pas être complètement initialisé. Vérifiez les logs d'initialisation.`);
                     } else if (deviceType === 'cover' && !lighting1Handler && device?.type === 'ARC') {
                         log('error', `❌ lighting1Handler non initialisé`);
+                        log('error', `❌ RFXCOM peut ne pas être complètement initialisé. Vérifiez les logs d'initialisation.`);
+                    } else if (deviceType === 'switch' && device && !rfxtrx) {
+                        log('error', `❌ RFXCOM non initialisé (rfxtrx est null) pour deviceId: ${deviceId}`);
                     }
                 }
             } else {
@@ -611,7 +665,9 @@ function initializeRFXCOMAsync() {
                     };
                     lighting2Handler = new rfxcom.Lighting2(rfxtrx, rfxcom.lighting2.AC);
 
+                    log('info', `✅ Handlers RFXCOM créés: lighting1Handler=${!!lighting1Handler}, lighting2Handler=${!!lighting2Handler}`);
                     log('info', `✅ RFXCOM initialisé avec succès (via fallback après 'ready')`);
+                    log('info', `✅ Module RFXCOM prêt à recevoir des commandes`);
 
                     // Initialiser MQTT
                     setTimeout(() => {
@@ -706,6 +762,9 @@ function initializeRFXCOMAsync() {
 
                 // Créer le handler pour Lighting2 (AC, DIO Chacon, etc.)
                 lighting2Handler = new rfxcom.Lighting2(rfxtrx, rfxcom.lighting2.AC);
+
+                log('info', `✅ Handlers RFXCOM créés: lighting1Handler=${!!lighting1Handler}, lighting2Handler=${!!lighting2Handler}`);
+                log('info', `✅ Module RFXCOM prêt à recevoir des commandes`);
 
                 // Fallback : si 'receiverstarted' n'est pas émis dans les 5 secondes,
                 // enregistrer quand même les listeners (pour compatibilité avec certaines versions)
@@ -2219,57 +2278,66 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Démarrer le serveur Express IMMÉDIATEMENT
 // Le serveur doit démarrer avant l'initialisation RFXCOM pour être accessible
-server = app.listen(API_PORT, '0.0.0.0', (err) => {
-    if (err) {
-        log('error', `❌ Erreur lors du démarrage du serveur: ${err.message}`);
-        process.exit(1);
-    }
+// En mode test (API_PORT = 0), ne pas démarrer le serveur (sera géré par supertest)
+if (API_PORT !== 0) {
+    server = app.listen(API_PORT, '0.0.0.0', (err) => {
+        if (err) {
+            log('error', `❌ Erreur lors du démarrage du serveur: ${err.message}`);
+            process.exit(1);
+        }
 
-    log('info', `🌐 Serveur API démarré sur le port ${API_PORT}`);
-    log('info', `🌐 Interface web disponible sur http://localhost:${API_PORT}/`);
-    log('info', `📡 Endpoints disponibles:`);
-    log('info', `   GET  / - Interface web de gestion des appareils`);
-    log('info', `   GET  /health - Health check`);
-    log('info', `   GET  /api/devices - Liste des appareils`);
-    log('info', `   GET  /api/devices/:id - Obtenir un appareil`);
-    log('info', `   POST /api/devices/arc - Ajouter un appareil ARC`);
-    log('info', `   POST /api/devices/arc/pair - Appairer un appareil ARC (envoie ON)`);
-    log('info', `   POST /api/devices/arc/confirm-pair - Confirmer l'appairage ARC`);
-    log('info', `   POST /api/devices/arc/:id/unpair - Désappairer un appareil ARC (envoie OFF)`);
-    log('info', `   POST /api/devices/arc/:id/on - Ouvrir/Monter un appareil ARC`);
-    log('info', `   POST /api/devices/arc/:id/off - Fermer/Descendre un appareil ARC`);
-    log('info', `   POST /api/devices/arc/:id/stop - Arrêter un appareil ARC`);
-    log('info', `   POST /api/devices/arc/:id/up - Alias pour ON`);
-    log('info', `   POST /api/devices/arc/:id/down - Alias pour OFF`);
-    log('info', `   POST /api/devices/ac - Ajouter une prise AC`);
-    log('info', `   POST /api/devices/ac/pair - Appairer une prise AC (envoie ON)`);
-    log('info', `   POST /api/devices/ac/confirm-pair - Confirmer l'appairage AC`);
-    log('info', `   POST /api/devices/ac/:id/unpair - Désappairer une prise AC (envoie OFF)`);
-    log('info', `   POST /api/devices/ac/:id/on - Allumer une prise AC`);
-    log('info', `   POST /api/devices/ac/:id/off - Éteindre une prise AC`);
-    log('info', `   PUT /api/devices/:id/rename - Renommer un appareil`);
-    log('info', `   DELETE /api/devices/:id - Supprimer un appareil`);
+        log('info', `🌐 Serveur API démarré sur le port ${API_PORT}`);
+        log('info', `🌐 Interface web disponible sur http://localhost:${API_PORT}/`);
+        log('info', `📡 Endpoints disponibles:`);
+        log('info', `   GET  / - Interface web de gestion des appareils`);
+        log('info', `   GET  /health - Health check`);
+        log('info', `   GET  /api/devices - Liste des appareils`);
+        log('info', `   GET  /api/devices/:id - Obtenir un appareil`);
+        log('info', `   POST /api/devices/arc - Ajouter un appareil ARC`);
+        log('info', `   POST /api/devices/arc/pair - Appairer un appareil ARC (envoie ON)`);
+        log('info', `   POST /api/devices/arc/confirm-pair - Confirmer l'appairage ARC`);
+        log('info', `   POST /api/devices/arc/:id/unpair - Désappairer un appareil ARC (envoie OFF)`);
+        log('info', `   POST /api/devices/arc/:id/on - Ouvrir/Monter un appareil ARC`);
+        log('info', `   POST /api/devices/arc/:id/off - Fermer/Descendre un appareil ARC`);
+        log('info', `   POST /api/devices/arc/:id/stop - Arrêter un appareil ARC`);
+        log('info', `   POST /api/devices/arc/:id/up - Alias pour ON`);
+        log('info', `   POST /api/devices/arc/:id/down - Alias pour OFF`);
+        log('info', `   POST /api/devices/ac - Ajouter une prise AC`);
+        log('info', `   POST /api/devices/ac/pair - Appairer une prise AC (envoie ON)`);
+        log('info', `   POST /api/devices/ac/confirm-pair - Confirmer l'appairage AC`);
+        log('info', `   POST /api/devices/ac/:id/unpair - Désappairer une prise AC (envoie OFF)`);
+        log('info', `   POST /api/devices/ac/:id/on - Allumer une prise AC`);
+        log('info', `   POST /api/devices/ac/:id/off - Éteindre une prise AC`);
+        log('info', `   PUT /api/devices/:id/rename - Renommer un appareil`);
+        log('info', `   DELETE /api/devices/:id - Supprimer un appareil`);
 
-    // Vérifier que le serveur écoute bien
-    server.on('error', (err) => {
-        log('error', `❌ Erreur serveur: ${err.message}`);
+        // Vérifier que le serveur écoute bien
+        server.on('error', (err) => {
+            log('error', `❌ Erreur serveur: ${err.message}`);
+        });
+
+        server.on('connection', (socket) => {
+            log('debug', `🔌 Nouvelle connexion depuis ${socket.remoteAddress}:${socket.remotePort}`);
+        });
+
+        // Tester que le serveur répond correctement
+        setTimeout(() => {
+            testServerHealth();
+        }, 1000);
+
+        // Démarrer l'initialisation RFXCOM APRÈS le démarrage du serveur
+        // Cela garantit que le serveur HTTP est accessible même si RFXCOM ne s'initialise pas
+        setTimeout(() => {
+            initializeRFXCOMAsync();
+        }, 500);
     });
-
-    server.on('connection', (socket) => {
-        log('debug', `🔌 Nouvelle connexion depuis ${socket.remoteAddress}:${socket.remotePort}`);
-    });
-
-    // Tester que le serveur répond correctement
-    setTimeout(() => {
-        testServerHealth();
-    }, 1000);
-
-    // Démarrer l'initialisation RFXCOM APRÈS le démarrage du serveur
-    // Cela garantit que le serveur HTTP est accessible même si RFXCOM ne s'initialise pas
+} else {
+    // En mode test, ne pas démarrer le serveur ni les tests de santé
+    // Démarrer seulement l'initialisation RFXCOM
     setTimeout(() => {
         initializeRFXCOMAsync();
     }, 500);
-});
+}
 
 // Fonction pour tester que le serveur répond
 function testServerHealth() {
@@ -2353,3 +2421,28 @@ process.on('SIGINT', () => {
     log('info', '🛑 Signal SIGINT reçu, arrêt de l\'add-on...');
     cleanupAndExit(0);
 });
+
+// Exporter l'app pour les tests
+if (typeof module !== 'undefined' && module.exports) {
+    const exported = { 
+        app, 
+        server
+    };
+    
+    // Ajouter les getters/setters pour les handlers
+    Object.defineProperty(exported, 'lighting1Handler', {
+        get: function() { return lighting1Handler; },
+        set: function(value) { lighting1Handler = value; },
+        enumerable: true,
+        configurable: true
+    });
+    
+    Object.defineProperty(exported, 'lighting2Handler', {
+        get: function() { return lighting2Handler; },
+        set: function(value) { lighting2Handler = value; },
+        enumerable: true,
+        configurable: true
+    });
+    
+    module.exports = exported;
+}

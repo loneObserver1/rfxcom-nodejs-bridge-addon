@@ -5,6 +5,24 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.7] - 2025-01-02
+
+### 🔧 Corrections
+
+- **Amélioration du diagnostic des problèmes de connexion RFXCOM** :
+  - Ajout de vérifications que `rfxtrx` est initialisé avant d'envoyer les commandes
+  - Logs détaillés avant et après l'appel des méthodes `switchOn`/`switchOff`/`switchUp`/`switchDown`
+  - Gestion des exceptions lors de l'appel des méthodes RFXCOM
+  - Logs d'initialisation améliorés pour confirmer que les handlers sont créés
+
+### 🛠️ Améliorations
+
+- **Logs de diagnostic améliorés** :
+  - Logs avant l'envoi de chaque commande au module RFXCOM
+  - Confirmation que les méthodes sont appelées après l'invocation
+  - Messages d'erreur plus détaillés si `rfxtrx` n'est pas initialisé
+  - Logs pour identifier où se situe le problème dans la chaîne d'envoi des commandes
+
 ## [2.1.6] - 2025-12-30
 
 ### 🔧 Corrections
