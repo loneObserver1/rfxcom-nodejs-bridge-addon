@@ -685,6 +685,15 @@ function initializeRFXCOMAsync() {
                     // Ne pas marquer comme prêt ici, attendre receiverstarted ou le timeout
                     log('info', `⏳ En attente de l'événement 'receiverstarted' pour confirmer que le module est prêt...`);
 
+                    // Fallback : si 'receiverstarted' n'est pas émis dans les 5 secondes,
+                    // marquer RFXCOM comme prêt quand même (pour compatibilité avec certaines versions)
+                    setTimeout(() => {
+                        if (!rfxtrxReady && rfxtrx) {
+                            rfxtrxReady = true;
+                            log('info', `✅ RFXCOM marqué comme prêt (via fallback après 5 secondes depuis 'ready')`);
+                        }
+                    }, 5000);
+
                     // Initialiser MQTT
                     setTimeout(() => {
                         initializeMQTT();
@@ -2479,6 +2488,14 @@ if (typeof module !== 'undefined' && module.exports) {
     Object.defineProperty(exported, 'lighting2Handler', {
         get: function() { return lighting2Handler; },
         set: function(value) { lighting2Handler = value; },
+        enumerable: true,
+        configurable: true
+    });
+    
+    // Exporter rfxtrxReady pour les tests
+    Object.defineProperty(exported, 'rfxtrxReady', {
+        get: function() { return rfxtrxReady; },
+        set: function(value) { rfxtrxReady = value; },
         enumerable: true,
         configurable: true
     });
