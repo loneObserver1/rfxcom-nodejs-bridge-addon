@@ -2,9 +2,16 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.1.9**
+**Version actuelle : 2.1.10**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.10
+- **Correction majeure du problème avec AUTO_DISCOVERY activé** :
+  - Identification et correction du problème dans le package rfxcom : la queue de transmission ne démarrait pas si `receiverstarted` n'était pas émis
+  - Ajout d'un mécanisme de fallback pour forcer le démarrage de la queue de transmission
+  - Les commandes fonctionnent maintenant correctement même si `receiverstarted` n'est pas émis (notamment avec `auto_discovery: true`)
+  - Détection automatique et démarrage forcé de la queue avec logs de diagnostic
 
 ### Version 2.1.9
 - **Correction du problème avec AUTO_DISCOVERY activé** :

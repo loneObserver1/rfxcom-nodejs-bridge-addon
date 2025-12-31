@@ -700,6 +700,18 @@ function initializeRFXCOMAsync() {
                                 log('warn', `⚠️ Enregistrement des listeners via fallback (receiverstarted non émis)`);
                                 registerMessageListeners();
                             }
+                            // IMPORTANT: Forcer le démarrage de la queue de transmission si initialising est encore true
+                            // Cela peut arriver si receiverstarted n'est pas émis, ce qui empêche la queue de démarrer
+                            if (rfxtrx.initialising === true && rfxtrx.TxQ && typeof rfxtrx.TxQ.start === 'function') {
+                                log('warn', `⚠️ La queue de transmission n'a pas été démarrée automatiquement, démarrage forcé...`);
+                                try {
+                                    rfxtrx.initialising = false; // Marquer comme non initialisant pour permettre le démarrage
+                                    rfxtrx.TxQ.start();
+                                    log('info', `✅ Queue de transmission démarrée avec succès`);
+                                } catch (err) {
+                                    log('error', `❌ Erreur lors du démarrage forcé de la queue: ${err.message}`);
+                                }
+                            }
                         }
                     }, 5000);
 
@@ -814,6 +826,18 @@ function initializeRFXCOMAsync() {
                         rfxtrxReady = true; // Marquer RFXCOM comme prêt même sans receiverstarted
                         log('info', `✅ RFXCOM marqué comme prêt (via fallback après 5 secondes)`);
                         registerMessageListeners();
+                        // IMPORTANT: Forcer le démarrage de la queue de transmission si initialising est encore true
+                        // Cela peut arriver si receiverstarted n'est pas émis, ce qui empêche la queue de démarrer
+                        if (rfxtrx.initialising === true && rfxtrx.TxQ && typeof rfxtrx.TxQ.start === 'function') {
+                            log('warn', `⚠️ La queue de transmission n'a pas été démarrée automatiquement, démarrage forcé...`);
+                            try {
+                                rfxtrx.initialising = false; // Marquer comme non initialisant pour permettre le démarrage
+                                rfxtrx.TxQ.start();
+                                log('info', `✅ Queue de transmission démarrée avec succès`);
+                            } catch (err) {
+                                log('error', `❌ Erreur lors du démarrage forcé de la queue: ${err.message}`);
+                            }
+                        }
                     } else if (!rfxtrxReady && rfxtrx) {
                         // Si listeners sont enregistrés mais rfxtrxReady n'est pas true, le marquer maintenant
                         // Cela peut arriver si receiverstarted est émis mais rfxtrxReady n'a pas été mis à jour
@@ -822,6 +846,17 @@ function initializeRFXCOMAsync() {
                         // S'assurer que les listeners sont enregistrés même si receiverstarted n'a pas été émis
                         if (!listenersRegistered) {
                             registerMessageListeners();
+                        }
+                        // IMPORTANT: Forcer le démarrage de la queue de transmission si initialising est encore true
+                        if (rfxtrx.initialising === true && rfxtrx.TxQ && typeof rfxtrx.TxQ.start === 'function') {
+                            log('warn', `⚠️ La queue de transmission n'a pas été démarrée automatiquement, démarrage forcé...`);
+                            try {
+                                rfxtrx.initialising = false; // Marquer comme non initialisant pour permettre le démarrage
+                                rfxtrx.TxQ.start();
+                                log('info', `✅ Queue de transmission démarrée avec succès`);
+                            } catch (err) {
+                                log('error', `❌ Erreur lors du démarrage forcé de la queue: ${err.message}`);
+                            }
                         }
                     }
                 }, 5000);

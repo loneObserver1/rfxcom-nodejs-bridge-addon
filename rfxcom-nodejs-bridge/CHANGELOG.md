@@ -5,6 +5,23 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.10] - 2025-01-02
+
+### 🔧 Corrections
+
+- **Correction majeure du problème avec AUTO_DISCOVERY activé** :
+  - Identification du problème dans le package rfxcom : la queue de transmission (`TxQ`) ne démarre pas si `receiverstarted` n'est pas émis
+  - Ajout d'un mécanisme de fallback pour forcer le démarrage de la queue de transmission si `initialising` reste à `true` après 5 secondes
+  - Cela corrige définitivement le problème où les commandes ne fonctionnaient pas quand `auto_discovery` était activé
+  - La queue de transmission est maintenant forcée à démarrer même si l'événement `receiverstarted` n'est pas émis
+
+### 🛠️ Améliorations
+
+- **Gestion améliorée de la queue de transmission RFXCOM** :
+  - Détection automatique si la queue n'a pas été démarrée automatiquement
+  - Démarrage forcé de la queue avec logs de diagnostic
+  - Meilleure résilience face aux variations du comportement du package rfxcom
+
 ## [2.1.9] - 2025-01-02
 
 ### 🔧 Corrections
