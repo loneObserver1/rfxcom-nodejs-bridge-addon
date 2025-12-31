@@ -569,8 +569,74 @@ function initializeRFXCOMAsync() {
 
         // Écouter les événements AVANT d'appeler initialise
         // Cela garantit qu'on ne manque pas les événements
+
+        // Écouter connectfailed pour détecter les échecs de connexion
+        rfxtrx.once('connectfailed', () => {
+            if (!timeoutTriggered) {
+                timeoutTriggered = true;
+                clearTimeout(initTimeout);
+                shutdownOnRFXCOMError('Échec de connexion au module RFXCOM. Vérifiez le port série et les permissions.');
+            }
+        });
+
+        // Écouter connecting pour le debug
+        rfxtrx.on('connecting', () => {
+            log('info', '📡 Connexion RFXCOM en cours...');
+        });
+
+        // Quand ready est émis, considérer que l'initialisation est en cours
+        let readyEmitted = false;
         rfxtrx.once('ready', () => {
             log('info', `✅ RFXCOM prêt (événement 'ready')`);
+            readyEmitted = true;
+
+            // Fallback : si le callback initialise n'est pas appelé dans les 3 secondes après ready,
+            // considérer que l'initialisation est réussie (certaines versions du package ne déclenchent pas toujours le callback)
+            setTimeout(() => {
+                if (!initCompleted && !timeoutTriggered && rfxtrx) {
+                    log('warn', `⚠️ Callback initialise non appelé après 'ready', considération de l'initialisation comme réussie`);
+                    initCompleted = true;
+                    clearTimeout(initTimeout);
+
+                    // Créer les handlers maintenant
+                    lighting1Handler = new rfxcom.Lighting1(rfxtrx, rfxcom.lighting1.ARC);
+                    lighting1Handler.switchUp = function(houseCode, unitCode, callback) {
+                        return this.switchOn(`${houseCode}${unitCode}`, callback);
+                    };
+                    lighting1Handler.switchDown = function(houseCode, unitCode, callback) {
+                        return this.switchOff(`${houseCode}${unitCode}`, callback);
+                    };
+                    lighting1Handler.stop = function(houseCode, unitCode, callback) {
+                        return this.chime(`${houseCode}${unitCode}`, callback);
+                    };
+                    lighting2Handler = new rfxcom.Lighting2(rfxtrx, rfxcom.lighting2.AC);
+
+                    log('info', `✅ RFXCOM initialisé avec succès (via fallback après 'ready')`);
+
+                    // Initialiser MQTT
+                    setTimeout(() => {
+                        initializeMQTT();
+                        if (mqttHelper) {
+                            mqttHelper.onConnect = () => {
+                                log('info', '✅ Test de connexion MQTT réussi');
+                                const deviceCount = Object.keys(devices).length;
+                                if (deviceCount === 0) {
+                                    log('info', '🔄 Tentative de récupération des appareils depuis les topics de découverte MQTT...');
+                                    recoverDevicesFromMQTT();
+                                } else {
+                                    setTimeout(() => {
+                                        log('info', `📡 Publication des ${deviceCount} entité(s) Home Assistant existante(s)...`);
+                                        Object.keys(devices).forEach(deviceId => {
+                                            const device = devices[deviceId];
+                                            mqttHelper.publishDeviceDiscovery({ ...device, id: deviceId });
+                                        });
+                                    }, 1000);
+                                }
+                            };
+                        }
+                    }, 500);
+                }
+            }, 3000);
         });
 
         // Attendre l'événement 'receiverstarted' avant d'enregistrer les listeners
@@ -585,6 +651,9 @@ function initializeRFXCOMAsync() {
             if (initCompleted) {
                 log('error', `❌ Erreur RFXCOM: ${err.message}`);
                 shutdownOnRFXCOMError(`Erreur de connexion RFXCOM: ${err.message}`);
+            } else {
+                // Pendant l'initialisation, juste logger
+                log('warn', `⚠️ Erreur RFXCOM pendant l'initialisation: ${err.message}`);
             }
         });
 
@@ -592,6 +661,9 @@ function initializeRFXCOMAsync() {
             if (initCompleted) {
                 log('error', '❌ RFXCOM déconnecté');
                 shutdownOnRFXCOMError('RFXCOM s\'est déconnecté. L\'add-on ne peut pas fonctionner sans RFXCOM.');
+            } else {
+                // Pendant l'initialisation, juste logger
+                log('warn', '⚠️ RFXCOM déconnecté pendant l\'initialisation');
             }
         });
 

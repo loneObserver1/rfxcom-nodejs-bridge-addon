@@ -5,6 +5,28 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.6] - 2025-12-30
+
+### 🔧 Corrections
+
+- **Fallback pour l'initialisation RFXCOM** :
+  - Ajout d'un fallback si l'événement `ready` est émis mais que le callback `initialise` n'est pas appelé dans les 3 secondes
+  - Certaines versions du package rfxcom ne déclenchent pas toujours le callback `initialise` même si `ready` est émis
+  - Le fallback permet de continuer l'initialisation et de créer les handlers même si le callback n'est pas appelé
+  - Cela corrige le problème où l'add-on attendait indéfiniment le callback `initialise` malgré l'émission de `ready`
+
+- **Détection des échecs de connexion** :
+  - Ajout d'un listener pour l'événement `connectfailed` pour détecter rapidement les échecs de connexion
+  - Ajout d'un listener pour l'événement `connecting` pour améliorer les logs de debug
+  - Meilleure gestion des erreurs pendant l'initialisation (warnings au lieu d'arrêts prématurés)
+
+### 🛠️ Améliorations
+
+- **Logs améliorés** :
+  - Logs plus détaillés pour suivre le processus d'initialisation
+  - Distinction entre les erreurs pendant l'initialisation (warnings) et après (arrêt)
+  - Meilleure visibilité sur les étapes de connexion RFXCOM
+
 ## [2.1.5] - 2025-12-30
 
 ### 🔧 Corrections
