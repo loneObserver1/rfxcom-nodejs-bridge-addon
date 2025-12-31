@@ -5,6 +5,24 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.5] - 2025-12-30
+
+### 🔧 Corrections
+
+- **Correction majeure de l'initialisation RFXCOM** :
+  - Nettoyage complet de l'instance RFXCOM précédente avant création d'une nouvelle instance
+  - Réorganisation de l'ordre d'enregistrement des listeners : les listeners sont maintenant enregistrés AVANT l'appel à `initialise()`
+  - Cela corrige le problème où le callback `initialise` n'était jamais appelé, causant un timeout systématique
+  - Les listeners pour `ready` et `receiverstarted` sont maintenant enregistrés avant `initialise()` pour ne pas manquer les événements
+  - Protection des listeners `error` et `disconnect` avec la variable `initCompleted` pour éviter les arrêts prématurés
+
+### 🛠️ Améliorations
+
+- **Meilleure gestion des instances RFXCOM** :
+  - Détection et nettoyage automatique d'une instance précédente si elle existe
+  - Retrait de tous les listeners avant fermeture de l'ancienne instance
+  - Évite les conflits et les fuites mémoire lors des redémarrages
+
 ## [2.1.4] - 2025-12-30
 
 ### 🔧 Corrections

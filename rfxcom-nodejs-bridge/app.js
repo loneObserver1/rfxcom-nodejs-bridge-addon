@@ -484,6 +484,18 @@ function initializeRFXCOMAsync() {
     try {
         log('info', `🔌 Initialisation du module RFXCOM sur ${SERIAL_PORT}...`);
 
+        // Nettoyer toute instance précédente si elle existe
+        if (rfxtrx) {
+            try {
+                log('info', '🧹 Nettoyage de l\'instance RFXCOM précédente...');
+                rfxtrx.removeAllListeners();
+                rfxtrx.close();
+            } catch (err) {
+                log('warn', `⚠️ Erreur lors du nettoyage de l'instance précédente: ${err.message}`);
+            }
+            rfxtrx = null;
+        }
+
         const debugMode = LOG_LEVEL === 'debug';
         rfxtrx = new rfxcom.RfxCom(SERIAL_PORT, {
             debug: debugMode
@@ -491,16 +503,105 @@ function initializeRFXCOMAsync() {
 
         // Ajouter un timeout pour éviter que l'initialisation bloque indéfiniment
         let timeoutTriggered = false;
+        let initCompleted = false;
         const initTimeout = setTimeout(() => {
-            timeoutTriggered = true;
-            shutdownOnRFXCOMError(`Timeout lors de l'initialisation RFXCOM (30s). Le module RFXCOM n'a pas répondu dans le délai imparti.`);
+            if (!initCompleted) {
+                timeoutTriggered = true;
+                shutdownOnRFXCOMError(`Timeout lors de l'initialisation RFXCOM (30s). Le module RFXCOM n'a pas répondu dans le délai imparti.`);
+            }
         }, 30000);
 
+        // Variable pour suivre si les listeners ont été enregistrés
+        let listenersRegistered = false;
+
+        // Fonction pour enregistrer les listeners de messages
+        // Doit être appelée après l'événement 'receiverstarted'
+        const registerMessageListeners = () => {
+            if (listenersRegistered || !rfxtrx) {
+                return; // Éviter d'enregistrer plusieurs fois
+            }
+            listenersRegistered = true;
+
+            // Écouter les messages si la détection automatique est activée
+            if (AUTO_DISCOVERY) {
+                log('info', `👂 Enregistrement des listeners pour détection automatique...`);
+                rfxtrx.on('receive', (evt, msg) => {
+                    if (msg && typeof msg === 'object') {
+                        log('debug', `📨 Message reçu:`, JSON.stringify(msg));
+                        handleReceivedMessage(msg);
+                    } else {
+                        // Ignorer les messages vides ou les échos de commandes envoyées
+                        // Ces messages sont normaux et ne nécessitent pas de warning
+                        log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
+                    }
+                });
+
+                // Écouter spécifiquement les événements "temperaturerain1" pour les sondes Alecto
+                rfxtrx.on('temperaturerain1', (msg) => {
+                    log('info', `🌡️ Message Alecto temperaturerain1 reçu:`, JSON.stringify(msg));
+                    if (msg && typeof msg === 'object') {
+                        handleReceivedMessage(msg);
+                    }
+                });
+
+                // Écouter spécifiquement les événements "temperaturehumidity1" pour les sondes Alecto TH13/WS1700
+                rfxtrx.on('temperaturehumidity1', (msg) => {
+                    log('info', `🌡️ Message Alecto TH13/WS1700 temperaturehumidity1 reçu:`, JSON.stringify(msg));
+                    if (msg && typeof msg === 'object') {
+                        handleReceivedMessage(msg);
+                    }
+                });
+                log('info', `✅ Listeners de détection automatique enregistrés`);
+            } else {
+                // Même si AUTO_DISCOVERY est désactivé, on peut écouter les messages pour le debug
+                // mais on ne les traite pas pour la détection automatique
+                rfxtrx.on('receive', (evt, msg) => {
+                    if (msg && typeof msg === 'object') {
+                        log('debug', `📨 Message RFXCOM reçu (AUTO_DISCOVERY désactivé):`, JSON.stringify(msg));
+                    } else {
+                        // Ignorer silencieusement les messages vides/échos
+                        log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
+                    }
+                });
+            }
+            log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
+        };
+
+        // Écouter les événements AVANT d'appeler initialise
+        // Cela garantit qu'on ne manque pas les événements
+        rfxtrx.once('ready', () => {
+            log('info', `✅ RFXCOM prêt (événement 'ready')`);
+        });
+
+        // Attendre l'événement 'receiverstarted' avant d'enregistrer les listeners
+        // Cela garantit que le récepteur RFXCOM est complètement initialisé
+        rfxtrx.once('receiverstarted', () => {
+            log('info', `✅ Récepteur RFXCOM démarré (événement 'receiverstarted'), enregistrement des listeners...`);
+            registerMessageListeners();
+        });
+
+        // Gérer les erreurs de connexion série (après l'initialisation)
+        rfxtrx.on('error', (err) => {
+            if (initCompleted) {
+                log('error', `❌ Erreur RFXCOM: ${err.message}`);
+                shutdownOnRFXCOMError(`Erreur de connexion RFXCOM: ${err.message}`);
+            }
+        });
+
+        rfxtrx.on('disconnect', () => {
+            if (initCompleted) {
+                log('error', '❌ RFXCOM déconnecté');
+                shutdownOnRFXCOMError('RFXCOM s\'est déconnecté. L\'add-on ne peut pas fonctionner sans RFXCOM.');
+            }
+        });
+
+        // Appeler initialise
         rfxtrx.initialise((error) => {
             // Si le timeout a déjà été déclenché, ne rien faire
             if (timeoutTriggered) {
                 return;
             }
+            initCompleted = true;
             clearTimeout(initTimeout);
             log('info', `📞 Callback initialise appelé (error: ${error ? error.message : 'null'})`);
 
@@ -510,17 +611,6 @@ function initializeRFXCOMAsync() {
                 return;
             } else {
                 log('info', `✅ RFXCOM initialisé avec succès sur ${SERIAL_PORT}`);
-
-                // Gérer les erreurs de connexion série
-                rfxtrx.on('error', (err) => {
-                    log('error', `❌ Erreur RFXCOM: ${err.message}`);
-                    shutdownOnRFXCOMError(`Erreur de connexion RFXCOM: ${err.message}`);
-                });
-
-                rfxtrx.on('disconnect', () => {
-                    log('error', '❌ RFXCOM déconnecté');
-                    shutdownOnRFXCOMError('RFXCOM s\'est déconnecté. L\'add-on ne peut pas fonctionner sans RFXCOM.');
-                });
 
                 // Créer le handler pour Lighting1 (ARC, etc.)
                 lighting1Handler = new rfxcom.Lighting1(rfxtrx, rfxcom.lighting1.ARC);
@@ -545,78 +635,10 @@ function initializeRFXCOMAsync() {
                 // Créer le handler pour Lighting2 (AC, DIO Chacon, etc.)
                 lighting2Handler = new rfxcom.Lighting2(rfxtrx, rfxcom.lighting2.AC);
 
-                // Variable pour suivre si les listeners ont été enregistrés
-                let listenersRegistered = false;
-
-                // Fonction pour enregistrer les listeners de messages
-                // Doit être appelée après l'événement 'receiverstarted'
-                const registerMessageListeners = () => {
-                    if (listenersRegistered) {
-                        return; // Éviter d'enregistrer plusieurs fois
-                    }
-                    listenersRegistered = true;
-
-                    // Écouter les messages si la détection automatique est activée
-                    if (AUTO_DISCOVERY) {
-                        log('info', `👂 Enregistrement des listeners pour détection automatique...`);
-                        rfxtrx.on('receive', (evt, msg) => {
-                            if (msg && typeof msg === 'object') {
-                                log('debug', `📨 Message reçu:`, JSON.stringify(msg));
-                                handleReceivedMessage(msg);
-                            } else {
-                                // Ignorer les messages vides ou les échos de commandes envoyées
-                                // Ces messages sont normaux et ne nécessitent pas de warning
-                                log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
-                            }
-                        });
-
-                        // Écouter spécifiquement les événements "temperaturerain1" pour les sondes Alecto
-                        rfxtrx.on('temperaturerain1', (msg) => {
-                            log('info', `🌡️ Message Alecto temperaturerain1 reçu:`, JSON.stringify(msg));
-                            if (msg && typeof msg === 'object') {
-                                handleReceivedMessage(msg);
-                            }
-                        });
-
-                        // Écouter spécifiquement les événements "temperaturehumidity1" pour les sondes Alecto TH13/WS1700
-                        rfxtrx.on('temperaturehumidity1', (msg) => {
-                            log('info', `🌡️ Message Alecto TH13/WS1700 temperaturehumidity1 reçu:`, JSON.stringify(msg));
-                            if (msg && typeof msg === 'object') {
-                                handleReceivedMessage(msg);
-                            }
-                        });
-                        log('info', `✅ Listeners de détection automatique enregistrés`);
-                    } else {
-                        // Même si AUTO_DISCOVERY est désactivé, on peut écouter les messages pour le debug
-                        // mais on ne les traite pas pour la détection automatique
-                        rfxtrx.on('receive', (evt, msg) => {
-                            if (msg && typeof msg === 'object') {
-                                log('debug', `📨 Message RFXCOM reçu (AUTO_DISCOVERY désactivé):`, JSON.stringify(msg));
-                            } else {
-                                // Ignorer silencieusement les messages vides/échos
-                                log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
-                            }
-                        });
-                    }
-                    log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
-                };
-
-                // Écouter l'événement 'ready' (certaines versions de rfxcom l'émettent)
-                rfxtrx.once('ready', () => {
-                    log('info', `✅ RFXCOM prêt (événement 'ready')`);
-                });
-
-                // Attendre l'événement 'receiverstarted' avant d'enregistrer les listeners
-                // Cela garantit que le récepteur RFXCOM est complètement initialisé
-                rfxtrx.once('receiverstarted', () => {
-                    log('info', `✅ Récepteur RFXCOM démarré (événement 'receiverstarted'), enregistrement des listeners...`);
-                    registerMessageListeners();
-                });
-
                 // Fallback : si 'receiverstarted' n'est pas émis dans les 5 secondes,
                 // enregistrer quand même les listeners (pour compatibilité avec certaines versions)
                 setTimeout(() => {
-                    if (!listenersRegistered) {
+                    if (!listenersRegistered && rfxtrx) {
                         log('warn', `⚠️ Événement 'receiverstarted' non reçu dans les 5 secondes, enregistrement des listeners de toute façon...`);
                         registerMessageListeners();
                     }
