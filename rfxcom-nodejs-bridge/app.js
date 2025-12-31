@@ -634,6 +634,7 @@ function initializeRFXCOMAsync() {
                 });
             }
             log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
+            log('info', `📊 État: AUTO_DISCOVERY=${AUTO_DISCOVERY}, listenersRegistered=${listenersRegistered}, rfxtrxReady=${rfxtrxReady}`);
         };
 
         // Écouter les événements AVANT d'appeler initialise
@@ -687,10 +688,18 @@ function initializeRFXCOMAsync() {
 
                     // Fallback : si 'receiverstarted' n'est pas émis dans les 5 secondes,
                     // marquer RFXCOM comme prêt quand même (pour compatibilité avec certaines versions)
+                    // IMPORTANT: Ce fallback est crucial quand AUTO_DISCOVERY est activé car receiverstarted
+                    // peut ne pas être émis dans certaines configurations
                     setTimeout(() => {
                         if (!rfxtrxReady && rfxtrx) {
                             rfxtrxReady = true;
                             log('info', `✅ RFXCOM marqué comme prêt (via fallback après 5 secondes depuis 'ready')`);
+                            // S'assurer que les listeners sont enregistrés si receiverstarted n'a pas été émis
+                            // Cela est particulièrement important quand AUTO_DISCOVERY est activé
+                            if (!listenersRegistered) {
+                                log('warn', `⚠️ Enregistrement des listeners via fallback (receiverstarted non émis)`);
+                                registerMessageListeners();
+                            }
                         }
                     }, 5000);
 
@@ -722,6 +731,8 @@ function initializeRFXCOMAsync() {
 
         // Attendre l'événement 'receiverstarted' avant d'enregistrer les listeners
         // Cela garantit que le récepteur RFXCOM est complètement initialisé
+        // NOTE: Cet événement peut ne pas être émis dans certaines configurations,
+        // notamment quand AUTO_DISCOVERY est activé, d'où l'importance du fallback de 5 secondes
         rfxtrx.once('receiverstarted', () => {
             log('info', `✅ Récepteur RFXCOM démarré (événement 'receiverstarted'), enregistrement des listeners...`);
             rfxtrxReady = true; // Marquer RFXCOM comme prêt à recevoir des commandes
@@ -795,6 +806,8 @@ function initializeRFXCOMAsync() {
 
                 // Fallback : si 'receiverstarted' n'est pas émis dans les 5 secondes,
                 // enregistrer quand même les listeners (pour compatibilité avec certaines versions)
+                // IMPORTANT: Ce fallback est crucial quand AUTO_DISCOVERY est activé car receiverstarted
+                // peut ne pas être émis dans certaines configurations
                 setTimeout(() => {
                     if (!listenersRegistered && rfxtrx) {
                         log('warn', `⚠️ Événement 'receiverstarted' non reçu dans les 5 secondes, enregistrement des listeners de toute façon...`);
@@ -803,8 +816,13 @@ function initializeRFXCOMAsync() {
                         registerMessageListeners();
                     } else if (!rfxtrxReady && rfxtrx) {
                         // Si listeners sont enregistrés mais rfxtrxReady n'est pas true, le marquer maintenant
+                        // Cela peut arriver si receiverstarted est émis mais rfxtrxReady n'a pas été mis à jour
                         rfxtrxReady = true;
                         log('info', `✅ RFXCOM marqué comme prêt (via fallback après 5 secondes)`);
+                        // S'assurer que les listeners sont enregistrés même si receiverstarted n'a pas été émis
+                        if (!listenersRegistered) {
+                            registerMessageListeners();
+                        }
                     }
                 }, 5000);
 
