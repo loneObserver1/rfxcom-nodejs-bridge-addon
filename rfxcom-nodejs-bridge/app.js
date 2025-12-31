@@ -36,6 +36,9 @@ function log(level, ...args) {
 // Gestion des appareils
 let devices = {};
 
+// Variables globales pour le nettoyage
+let server = null;
+
 // S'assurer que le répertoire de données existe
 function ensureDataDirectory() {
     try {
@@ -462,10 +465,19 @@ function initializeMQTT() {
     }
 }
 
+// Fonction pour arrêter proprement l'add-on en cas d'erreur RFXCOM critique
+function shutdownOnRFXCOMError(message) {
+    log('error', `❌ ${message}`);
+    log('error', `🛑 Arrêt de l'add-on car RFXCOM est essentiel pour son fonctionnement`);
+    setTimeout(() => {
+        cleanupAndExit(1);
+    }, 2000); // Délai de 2 secondes pour permettre l'écriture des logs
+}
+
 // Initialiser RFXCOM de manière asynchrone sans bloquer le serveur
 function initializeRFXCOMAsync() {
     if (!fs.existsSync(SERIAL_PORT)) {
-        log('warn', `⚠️ Port série ${SERIAL_PORT} non disponible, RFXCOM ne sera pas initialisé`);
+        shutdownOnRFXCOMError(`Port série ${SERIAL_PORT} non disponible. RFXCOM est essentiel pour cet add-on.`);
         return;
     }
 
@@ -478,31 +490,36 @@ function initializeRFXCOMAsync() {
         });
 
         // Ajouter un timeout pour éviter que l'initialisation bloque indéfiniment
+        let timeoutTriggered = false;
         const initTimeout = setTimeout(() => {
-            log('warn', `⚠️ Timeout lors de l'initialisation RFXCOM (30s), le serveur continue sans RFXCOM`);
+            timeoutTriggered = true;
+            shutdownOnRFXCOMError(`Timeout lors de l'initialisation RFXCOM (30s). Le module RFXCOM n'a pas répondu dans le délai imparti.`);
         }, 30000);
 
         rfxtrx.initialise((error) => {
+            // Si le timeout a déjà été déclenché, ne rien faire
+            if (timeoutTriggered) {
+                return;
+            }
             clearTimeout(initTimeout);
+            log('info', `📞 Callback initialise appelé (error: ${error ? error.message : 'null'})`);
 
             if (error) {
-                log('error', `❌ Erreur lors de l'initialisation RFXCOM:`, error);
-                log('warn', `⚠️ Le serveur continue sans RFXCOM, vous pouvez réessayer plus tard`);
+                shutdownOnRFXCOMError(`Erreur lors de l'initialisation RFXCOM: ${error.message || error}`);
                 rfxtrx = null;
+                return;
             } else {
                 log('info', `✅ RFXCOM initialisé avec succès sur ${SERIAL_PORT}`);
 
                 // Gérer les erreurs de connexion série
                 rfxtrx.on('error', (err) => {
                     log('error', `❌ Erreur RFXCOM: ${err.message}`);
-                    // Ne pas fermer automatiquement, laisser l'utilisateur gérer
+                    shutdownOnRFXCOMError(`Erreur de connexion RFXCOM: ${err.message}`);
                 });
 
                 rfxtrx.on('disconnect', () => {
-                    log('warn', '⚠️ RFXCOM déconnecté');
-                    rfxtrx = null;
-                    lighting1Handler = null;
-                    lighting2Handler = null;
+                    log('error', '❌ RFXCOM déconnecté');
+                    shutdownOnRFXCOMError('RFXCOM s\'est déconnecté. L\'add-on ne peut pas fonctionner sans RFXCOM.');
                 });
 
                 // Créer le handler pour Lighting1 (ARC, etc.)
@@ -528,49 +545,82 @@ function initializeRFXCOMAsync() {
                 // Créer le handler pour Lighting2 (AC, DIO Chacon, etc.)
                 lighting2Handler = new rfxcom.Lighting2(rfxtrx, rfxcom.lighting2.AC);
 
-                // Écouter les messages si la détection automatique est activée
-                if (AUTO_DISCOVERY) {
-                    log('info', `👂 Écoute des messages RFXCOM pour détection automatique...`);
-                    rfxtrx.on('receive', (evt, msg) => {
-                        if (msg && typeof msg === 'object') {
-                            log('debug', `📨 Message reçu:`, JSON.stringify(msg));
-                            handleReceivedMessage(msg);
-                        } else {
-                            // Ignorer les messages vides ou les échos de commandes envoyées
-                            // Ces messages sont normaux et ne nécessitent pas de warning
-                            log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
-                        }
-                    });
-                    
-                    // Écouter spécifiquement les événements "temperaturerain1" pour les sondes Alecto
-                    rfxtrx.on('temperaturerain1', (msg) => {
-                        log('info', `🌡️ Message Alecto temperaturerain1 reçu:`, JSON.stringify(msg));
-                        if (msg && typeof msg === 'object') {
-                            handleReceivedMessage(msg);
-                        }
-                    });
-                    
-                    // Écouter spécifiquement les événements "temperaturehumidity1" pour les sondes Alecto TH13/WS1700
-                    rfxtrx.on('temperaturehumidity1', (msg) => {
-                        log('info', `🌡️ Message Alecto TH13/WS1700 temperaturehumidity1 reçu:`, JSON.stringify(msg));
-                        if (msg && typeof msg === 'object') {
-                            handleReceivedMessage(msg);
-                        }
-                    });
-                } else {
-                    // Même si AUTO_DISCOVERY est désactivé, on peut écouter les messages pour le debug
-                    // mais on ne les traite pas pour la détection automatique
-                    rfxtrx.on('receive', (evt, msg) => {
-                        if (msg && typeof msg === 'object') {
-                            log('debug', `📨 Message RFXCOM reçu (AUTO_DISCOVERY désactivé):`, JSON.stringify(msg));
-                        } else {
-                            // Ignorer silencieusement les messages vides/échos
-                            log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
-                        }
-                    });
-                }
+                // Variable pour suivre si les listeners ont été enregistrés
+                let listenersRegistered = false;
 
-                log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
+                // Fonction pour enregistrer les listeners de messages
+                // Doit être appelée après l'événement 'receiverstarted'
+                const registerMessageListeners = () => {
+                    if (listenersRegistered) {
+                        return; // Éviter d'enregistrer plusieurs fois
+                    }
+                    listenersRegistered = true;
+
+                    // Écouter les messages si la détection automatique est activée
+                    if (AUTO_DISCOVERY) {
+                        log('info', `👂 Enregistrement des listeners pour détection automatique...`);
+                        rfxtrx.on('receive', (evt, msg) => {
+                            if (msg && typeof msg === 'object') {
+                                log('debug', `📨 Message reçu:`, JSON.stringify(msg));
+                                handleReceivedMessage(msg);
+                            } else {
+                                // Ignorer les messages vides ou les échos de commandes envoyées
+                                // Ces messages sont normaux et ne nécessitent pas de warning
+                                log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
+                            }
+                        });
+
+                        // Écouter spécifiquement les événements "temperaturerain1" pour les sondes Alecto
+                        rfxtrx.on('temperaturerain1', (msg) => {
+                            log('info', `🌡️ Message Alecto temperaturerain1 reçu:`, JSON.stringify(msg));
+                            if (msg && typeof msg === 'object') {
+                                handleReceivedMessage(msg);
+                            }
+                        });
+
+                        // Écouter spécifiquement les événements "temperaturehumidity1" pour les sondes Alecto TH13/WS1700
+                        rfxtrx.on('temperaturehumidity1', (msg) => {
+                            log('info', `🌡️ Message Alecto TH13/WS1700 temperaturehumidity1 reçu:`, JSON.stringify(msg));
+                            if (msg && typeof msg === 'object') {
+                                handleReceivedMessage(msg);
+                            }
+                        });
+                        log('info', `✅ Listeners de détection automatique enregistrés`);
+                    } else {
+                        // Même si AUTO_DISCOVERY est désactivé, on peut écouter les messages pour le debug
+                        // mais on ne les traite pas pour la détection automatique
+                        rfxtrx.on('receive', (evt, msg) => {
+                            if (msg && typeof msg === 'object') {
+                                log('debug', `📨 Message RFXCOM reçu (AUTO_DISCOVERY désactivé):`, JSON.stringify(msg));
+                            } else {
+                                // Ignorer silencieusement les messages vides/échos
+                                log('debug', `📨 Message RFXCOM reçu (écho/confirmation ignoré)`);
+                            }
+                        });
+                    }
+                    log('info', `🎉 L'addon est prêt à recevoir des commandes !`);
+                };
+
+                // Écouter l'événement 'ready' (certaines versions de rfxcom l'émettent)
+                rfxtrx.once('ready', () => {
+                    log('info', `✅ RFXCOM prêt (événement 'ready')`);
+                });
+
+                // Attendre l'événement 'receiverstarted' avant d'enregistrer les listeners
+                // Cela garantit que le récepteur RFXCOM est complètement initialisé
+                rfxtrx.once('receiverstarted', () => {
+                    log('info', `✅ Récepteur RFXCOM démarré (événement 'receiverstarted'), enregistrement des listeners...`);
+                    registerMessageListeners();
+                });
+
+                // Fallback : si 'receiverstarted' n'est pas émis dans les 5 secondes,
+                // enregistrer quand même les listeners (pour compatibilité avec certaines versions)
+                setTimeout(() => {
+                    if (!listenersRegistered) {
+                        log('warn', `⚠️ Événement 'receiverstarted' non reçu dans les 5 secondes, enregistrement des listeners de toute façon...`);
+                        registerMessageListeners();
+                    }
+                }, 5000);
 
                 // Initialiser MQTT après l'initialisation complète de RFXCOM
                 // Utiliser un petit délai pour s'assurer que tout est prêt
@@ -603,8 +653,7 @@ function initializeRFXCOMAsync() {
             }
         });
     } catch (error) {
-        log('error', `❌ Erreur lors de la création de la connexion RFXCOM:`, error);
-        log('warn', `⚠️ Le serveur continue sans RFXCOM`);
+        shutdownOnRFXCOMError(`Erreur lors de la création de la connexion RFXCOM: ${error.message || error}`);
     }
 }
 
@@ -616,13 +665,21 @@ function closeRFXCOM() {
     if (rfxtrx) {
         try {
             log('info', '🔌 Fermeture du port série RFXCOM...');
-            // Retirer les listeners pour éviter les erreurs
+            // Retirer TOUS les listeners pour éviter les erreurs et les fuites mémoire
             rfxtrx.removeAllListeners('error');
             rfxtrx.removeAllListeners('disconnect');
             rfxtrx.removeAllListeners('receive');
+            rfxtrx.removeAllListeners('ready');
+            rfxtrx.removeAllListeners('receiverstarted');
+            rfxtrx.removeAllListeners('temperaturerain1');
+            rfxtrx.removeAllListeners('temperaturehumidity1');
+            rfxtrx.removeAllListeners('connectfailed');
+            rfxtrx.removeAllListeners('connecting');
+            // Retirer tous les autres listeners au cas où
+            rfxtrx.removeAllListeners();
             // Fermer le port série
             rfxtrx.close();
-            log('info', '✅ Port série RFXCOM fermé');
+            log('info', '✅ Port série RFXCOM fermé et tous les listeners retirés');
         } catch (err) {
             log('warn', `⚠️ Erreur lors de la fermeture du port série: ${err.message}`);
         } finally {
@@ -633,32 +690,59 @@ function closeRFXCOM() {
     }
 }
 
-// Gérer l'arrêt propre
-process.on('SIGTERM', () => {
-    log('info', '🛑 Arrêt du module RFXCOM...');
-    saveDevices();
-    if (mqttHelper) {
-        mqttHelper.disconnect();
-    }
-    closeRFXCOM();
-    // Attendre un peu pour que la fermeture se termine proprement
-    setTimeout(() => {
-        process.exit(0);
-    }, 500);
-});
+// Fonction de nettoyage complète pour arrêter proprement l'add-on
+function cleanupAndExit(exitCode = 0) {
+    log('info', '🧹 Nettoyage des ressources...');
 
-process.on('SIGINT', () => {
-    log('info', '🛑 Arrêt du module RFXCOM...');
-    saveDevices();
-    if (mqttHelper) {
-        mqttHelper.disconnect();
+    // Sauvegarder les appareils
+    try {
+        saveDevices();
+        log('info', '✅ Appareils sauvegardés');
+    } catch (err) {
+        log('warn', `⚠️ Erreur lors de la sauvegarde des appareils: ${err.message}`);
     }
+
+    // Fermer la connexion MQTT
+    if (mqttHelper) {
+        try {
+            mqttHelper.disconnect();
+            log('info', '✅ Connexion MQTT fermée');
+        } catch (err) {
+            log('warn', `⚠️ Erreur lors de la fermeture MQTT: ${err.message}`);
+        }
+    }
+
+    // Fermer RFXCOM
     closeRFXCOM();
-    // Attendre un peu pour que la fermeture se termine proprement
-    setTimeout(() => {
-        process.exit(0);
-    }, 500);
-});
+
+    // Fermer le serveur HTTP
+    if (server) {
+        try {
+            server.close(() => {
+                log('info', '✅ Serveur HTTP fermé');
+                // Attendre un peu pour que toutes les fermetures se terminent proprement
+                setTimeout(() => {
+                    log('info', '🛑 Arrêt de l\'add-on');
+                    process.exit(exitCode);
+                }, 500);
+            });
+        } catch (err) {
+            log('warn', `⚠️ Erreur lors de la fermeture du serveur: ${err.message}`);
+            setTimeout(() => {
+                process.exit(exitCode);
+            }, 500);
+        }
+    } else {
+        // Si le serveur n'existe pas encore, arrêter directement
+        setTimeout(() => {
+            log('info', '🛑 Arrêt de l\'add-on');
+            process.exit(exitCode);
+        }, 500);
+    }
+}
+
+// Gérer l'arrêt propre avec nettoyage complet
+// Note: Les handlers dupliqués plus bas seront supprimés
 
 // Gérer les erreurs non capturées pour éviter les crashes
 process.on('uncaughtException', (error) => {
@@ -729,14 +813,14 @@ function handleReceivedMessage(msg) {
     // Détecter les sondes de température/humidité/pluie (Alecto)
     // Le package rfxcom peut utiliser différents noms de type selon la version
     // Support pour "temperaturerain1" (Alecto temp+rain), "temperaturehumidity1" (Alecto TH13/WS1700), et "tempHumidity" (générique)
-    const isTempSensor = 
-        msg.type === 'tempHumidity' || 
-        msg.type === 'TEMP_HUM' || 
+    const isTempSensor =
+        msg.type === 'tempHumidity' ||
+        msg.type === 'TEMP_HUM' ||
         msg.packetType === 'TEMP_HUM' ||
         msg.type === 'temperaturerain1' ||
         msg.type === 'temperaturehumidity1' ||
         msg.subtype === 13; // TH13
-    
+
     if (isTempSensor) {
         // Extraire l'ID de la sonde depuis différents champs possibles
         const sensorId = msg.id || msg.sensorId || msg.ID || `temp_${msg.channel || msg.channelNumber || 0}`;
@@ -2041,7 +2125,7 @@ process.on('unhandledRejection', (reason, promise) => {
 
 // Démarrer le serveur Express IMMÉDIATEMENT
 // Le serveur doit démarrer avant l'initialisation RFXCOM pour être accessible
-const server = app.listen(API_PORT, '0.0.0.0', (err) => {
+server = app.listen(API_PORT, '0.0.0.0', (err) => {
     if (err) {
         log('error', `❌ Erreur lors du démarrage du serveur: ${err.message}`);
         process.exit(1);
@@ -2165,19 +2249,13 @@ function testServerHealth() {
     });
 }
 
-// Gestion de l'arrêt propre
+// Gestion de l'arrêt propre (handlers unifiés)
 process.on('SIGTERM', () => {
-    log('info', '🛑 Signal SIGTERM reçu, arrêt du serveur...');
-    server.close(() => {
-        log('info', '✅ Serveur fermé proprement');
-        process.exit(0);
-    });
+    log('info', '🛑 Signal SIGTERM reçu, arrêt de l\'add-on...');
+    cleanupAndExit(0);
 });
 
 process.on('SIGINT', () => {
-    log('info', '🛑 Signal SIGINT reçu, arrêt du serveur...');
-    server.close(() => {
-        log('info', '✅ Serveur fermé proprement');
-        process.exit(0);
-    });
+    log('info', '🛑 Signal SIGINT reçu, arrêt de l\'add-on...');
+    cleanupAndExit(0);
 });

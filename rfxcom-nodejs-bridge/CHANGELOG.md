@@ -5,6 +5,38 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.4] - 2025-12-30
+
+### 🔧 Corrections
+
+- **Correction du problème d'initialisation RFXCOM avec auto_discovery** :
+  - Les listeners pour les événements spécifiques (`temperaturerain1`, `temperaturehumidity1`) sont maintenant enregistrés uniquement après l'événement `receiverstarted`
+  - Cela corrige le problème où l'initialisation RFXCOM échouait avec un timeout lorsque `auto_discovery` était activé
+  - Ajout d'un fallback de sécurité si l'événement `receiverstarted` n'est pas émis dans les 5 secondes
+
+- **L'add-on s'arrête maintenant si RFXCOM ne peut pas s'initialiser** :
+  - L'add-on ne continue plus sans RFXCOM (qui est essentiel pour son fonctionnement)
+  - Arrêt propre avec message d'erreur explicite en cas de :
+    - Port série introuvable
+    - Timeout d'initialisation (30s)
+    - Erreur d'initialisation
+    - Erreur de connexion série
+    - Déconnexion RFXCOM
+
+### 🛠️ Améliorations
+
+- **Nettoyage complet des ressources à l'arrêt** :
+  - Nouvelle fonction `cleanupAndExit()` qui nettoie toutes les ressources dans l'ordre :
+    1. Sauvegarde des appareils
+    2. Fermeture de la connexion MQTT
+    3. Fermeture de RFXCOM avec retrait de TOUS les listeners (évite les fuites mémoire)
+    4. Fermeture du serveur HTTP
+  - Amélioration de `closeRFXCOM()` pour retirer tous les listeners spécifiques :
+    - `temperaturerain1`, `temperaturehumidity1`, `ready`, `receiverstarted`, etc.
+    - Appel à `removeAllListeners()` pour retirer tous les listeners restants
+  - Handlers SIGTERM/SIGINT unifiés pour un nettoyage cohérent
+  - Logs améliorés pour le diagnostic
+
 ## [2.1.3] - 2025-12-30
 
 ### 🔧 Corrections

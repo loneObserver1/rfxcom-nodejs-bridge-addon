@@ -2,9 +2,23 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.1.3**
+**Version actuelle : 2.1.4**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.4
+- **Correction du problème d'initialisation RFXCOM avec auto_discovery** :
+  - Les listeners sont maintenant enregistrés uniquement après que le récepteur RFXCOM soit complètement démarré
+  - Cela corrige le problème où l'initialisation échouait avec un timeout lorsque `auto_discovery` était activé
+
+- **L'add-on s'arrête maintenant si RFXCOM ne peut pas s'initialiser** :
+  - L'add-on ne continue plus sans RFXCOM (qui est essentiel pour son fonctionnement)
+  - Arrêt propre avec message d'erreur explicite en cas de problème de connexion RFXCOM
+
+- **Nettoyage complet des ressources à l'arrêt** :
+  - Tous les listeners RFXCOM sont maintenant correctement retirés à l'arrêt
+  - Fermeture propre de toutes les connexions (RFXCOM, MQTT, HTTP)
+  - Évite les fuites mémoire et les erreurs lors de l'arrêt
 
 ### Version 2.1.3
 - **Correction du build Docker** :
