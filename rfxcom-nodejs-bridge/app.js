@@ -220,6 +220,7 @@ let rfxtrx = null;
 let lighting1Handler = null;
 let lighting2Handler = null;
 let mqttHelper = null;
+let rfxtrxReady = false; // Indicateur que RFXCOM est prêt à recevoir des commandes
 
 // Récupérer les paramètres MQTT depuis les variables d'environnement (pour utilisation après initialisation RFXCOM)
 const MQTT_HOST = process.env.MQTT_HOST || '';
@@ -385,6 +386,13 @@ function initializeMQTT() {
                                 return;
                             }
 
+                            // Vérifier que RFXCOM est prêt à recevoir des commandes
+                            if (!rfxtrxReady) {
+                                log('warn', `⚠️ RFXCOM n'est pas encore prêt à recevoir des commandes (receiverstarted non émis)`);
+                                log('warn', `⚠️ La commande sera ignorée. Attendez que le module soit complètement initialisé.`);
+                                return;
+                            }
+
                             if (messageStr === 'ON' || messageStr === 'on') {
                                 log('info', `📤 Envoi de la commande ON au module RFXCOM pour ${device.name}...`);
                                 try {
@@ -441,6 +449,13 @@ function initializeMQTT() {
                             // Vérifier que rfxtrx est bien initialisé
                             if (!rfxtrx) {
                                 log('error', `❌ RFXCOM non initialisé (rfxtrx est null)`);
+                                return;
+                            }
+
+                            // Vérifier que RFXCOM est prêt à recevoir des commandes
+                            if (!rfxtrxReady) {
+                                log('warn', `⚠️ RFXCOM n'est pas encore prêt à recevoir des commandes (receiverstarted non émis)`);
+                                log('warn', `⚠️ La commande sera ignorée. Attendez que le module soit complètement initialisé.`);
                                 return;
                             }
 
@@ -667,7 +682,8 @@ function initializeRFXCOMAsync() {
 
                     log('info', `✅ Handlers RFXCOM créés: lighting1Handler=${!!lighting1Handler}, lighting2Handler=${!!lighting2Handler}`);
                     log('info', `✅ RFXCOM initialisé avec succès (via fallback après 'ready')`);
-                    log('info', `✅ Module RFXCOM prêt à recevoir des commandes`);
+                    // Ne pas marquer comme prêt ici, attendre receiverstarted ou le timeout
+                    log('info', `⏳ En attente de l'événement 'receiverstarted' pour confirmer que le module est prêt...`);
 
                     // Initialiser MQTT
                     setTimeout(() => {
@@ -699,6 +715,7 @@ function initializeRFXCOMAsync() {
         // Cela garantit que le récepteur RFXCOM est complètement initialisé
         rfxtrx.once('receiverstarted', () => {
             log('info', `✅ Récepteur RFXCOM démarré (événement 'receiverstarted'), enregistrement des listeners...`);
+            rfxtrxReady = true; // Marquer RFXCOM comme prêt à recevoir des commandes
             registerMessageListeners();
         });
 
@@ -764,14 +781,21 @@ function initializeRFXCOMAsync() {
                 lighting2Handler = new rfxcom.Lighting2(rfxtrx, rfxcom.lighting2.AC);
 
                 log('info', `✅ Handlers RFXCOM créés: lighting1Handler=${!!lighting1Handler}, lighting2Handler=${!!lighting2Handler}`);
-                log('info', `✅ Module RFXCOM prêt à recevoir des commandes`);
+                // Ne pas marquer comme prêt ici, attendre receiverstarted ou le timeout
+                log('info', `⏳ En attente de l'événement 'receiverstarted' pour confirmer que le module est prêt...`);
 
                 // Fallback : si 'receiverstarted' n'est pas émis dans les 5 secondes,
                 // enregistrer quand même les listeners (pour compatibilité avec certaines versions)
                 setTimeout(() => {
                     if (!listenersRegistered && rfxtrx) {
                         log('warn', `⚠️ Événement 'receiverstarted' non reçu dans les 5 secondes, enregistrement des listeners de toute façon...`);
+                        rfxtrxReady = true; // Marquer RFXCOM comme prêt même sans receiverstarted
+                        log('info', `✅ RFXCOM marqué comme prêt (via fallback après 5 secondes)`);
                         registerMessageListeners();
+                    } else if (!rfxtrxReady && rfxtrx) {
+                        // Si listeners sont enregistrés mais rfxtrxReady n'est pas true, le marquer maintenant
+                        rfxtrxReady = true;
+                        log('info', `✅ RFXCOM marqué comme prêt (via fallback après 5 secondes)`);
                     }
                 }, 5000);
 
@@ -839,6 +863,7 @@ function closeRFXCOM() {
             rfxtrx = null;
             lighting1Handler = null;
             lighting2Handler = null;
+            rfxtrxReady = false;
         }
     }
 }
@@ -1549,6 +1574,13 @@ function sendArcCommand(deviceId, command, res) {
         });
     }
 
+    if (!rfxtrxReady) {
+        return res.status(503).json({
+            status: 'error',
+            error: 'RFXCOM n\'est pas encore prêt à recevoir des commandes. Attendez que le module soit complètement initialisé.'
+        });
+    }
+
     // Envoyer la commande
     log('info', `📤 Envoi de la commande ${command} à ${device.name} (House: ${device.houseCode}, Unit: ${device.unitCode})`);
 
@@ -1698,6 +1730,13 @@ function sendAcCommand(deviceId, command, res) {
         return res.status(500).json({
             status: 'error',
             error: 'RFXCOM non initialisé'
+        });
+    }
+
+    if (!rfxtrxReady) {
+        return res.status(503).json({
+            status: 'error',
+            error: 'RFXCOM n\'est pas encore prêt à recevoir des commandes. Attendez que le module soit complètement initialisé.'
         });
     }
 

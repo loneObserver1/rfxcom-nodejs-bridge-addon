@@ -5,6 +5,24 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.8] - 2025-01-02
+
+### 🔧 Corrections
+
+- **Vérification que RFXCOM est prêt avant d'envoyer des commandes** :
+  - Ajout d'un indicateur `rfxtrxReady` pour vérifier que le module RFXCOM est complètement prêt
+  - Les commandes sont maintenant bloquées si RFXCOM n'est pas prêt (attente de l'événement `receiverstarted`)
+  - Fallback après 5 secondes si l'événement `receiverstarted` n'est pas émis
+  - Messages d'erreur clairs si une commande est envoyée avant que RFXCOM soit prêt
+
+### 🛠️ Améliorations
+
+- **Gestion de l'état de préparation RFXCOM** :
+  - RFXCOM est marqué comme prêt quand l'événement `receiverstarted` est émis
+  - Fallback automatique après 5 secondes si `receiverstarted` n'est pas émis (compatibilité avec certaines versions)
+  - Logs améliorés pour indiquer clairement quand RFXCOM est prêt à recevoir des commandes
+  - Vérification dans toutes les fonctions d'envoi de commandes (MQTT et API REST)
+
 ## [2.1.7] - 2025-01-02
 
 ### 🔧 Corrections

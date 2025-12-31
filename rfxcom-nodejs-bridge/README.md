@@ -2,9 +2,16 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.1.7**
+**Version actuelle : 2.1.8**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.8
+- **Vérification que RFXCOM est prêt avant d'envoyer des commandes** :
+  - Les commandes sont maintenant bloquées si RFXCOM n'est pas complètement prêt
+  - Attente de l'événement `receiverstarted` avant d'accepter les commandes
+  - Fallback automatique après 5 secondes si l'événement n'est pas émis
+  - Messages d'erreur clairs si une commande est envoyée trop tôt
 
 ### Version 2.1.7
 - **Amélioration du diagnostic des problèmes de connexion RFXCOM** :
