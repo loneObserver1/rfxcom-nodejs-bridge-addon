@@ -5,6 +5,23 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.11] - 2025-01-02
+
+### 🔧 Corrections
+
+- **Correction du problème de doublons pour les sondes Alecto** :
+  - Normalisation de l'ID des sondes pour éviter la création de plusieurs appareils pour la même sonde physique
+  - Les IDs hexadécimaux sont maintenant normalisés (0x6A03, 6A03, 6a03 → 6A03)
+  - Correction appliquée à la fois lors de la détection automatique et lors de la récupération depuis MQTT
+  - Cela résout le problème où une même sonde créait plusieurs appareils dans Home Assistant avec des IDs différents
+
+### 🛠️ Améliorations
+
+- **Simplification des endpoints ARC** :
+  - Suppression des endpoints redondants `/up` et `/down` pour les volets ARC
+  - Seuls les endpoints `/on`, `/off` et `/stop` sont maintenant disponibles
+  - Simplification de la logique de traitement des commandes
+
 ## [2.1.10] - 2025-01-02
 
 ### 🔧 Corrections

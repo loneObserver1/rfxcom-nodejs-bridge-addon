@@ -1,6 +1,6 @@
 name: "RFXCOM Node.js Bridge"
 description: "Bridge Node.js pour la communication RFXCOM via le package node-rfxcom. Nécessite l'add-on MQTT (Mosquitto)."
-version: "2.1.10"
+version: "2.1.11"
 slug: rfxcom_nodejs_bridge
 init: false
 startup: services

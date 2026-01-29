@@ -2,9 +2,19 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.1.10**
+**Version actuelle : 2.1.11**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.11
+- **Correction du problème de doublons pour les sondes Alecto** :
+  - Normalisation de l'ID des sondes pour éviter la création de plusieurs appareils pour la même sonde physique
+  - Les IDs hexadécimaux sont maintenant normalisés (0x6A03, 6A03, 6a03 → 6A03)
+  - Correction appliquée à la fois lors de la détection automatique et lors de la récupération depuis MQTT
+  - Cela résout le problème où une même sonde créait plusieurs appareils dans Home Assistant avec des IDs différents
+- **Simplification des endpoints ARC** :
+  - Suppression des endpoints redondants `/up` et `/down` pour les volets ARC
+  - Seuls les endpoints `/on`, `/off` et `/stop` sont maintenant disponibles
 
 ### Version 2.1.10
 - **Correction majeure du problème avec AUTO_DISCOVERY activé** :
@@ -318,8 +328,8 @@ Si vous préférez utiliser les services REST depuis Home Assistant :
 
 | Commande | Action | Méthode API | Effet sur l'appairage |
 |----------|--------|-------------|----------------------|
-| **ON** / **UP** | Monter le volet | `POST /api/devices/arc/:id/on` | Aucun effet |
-| **OFF** / **DOWN** | Descendre le volet | `POST /api/devices/arc/:id/off` | Aucun effet |
+| **ON** | Monter le volet | `POST /api/devices/arc/:id/on` | Aucun effet |
+| **OFF** | Descendre le volet | `POST /api/devices/arc/:id/off` | Aucun effet |
 | **STOP** | Arrêter le volet | `POST /api/devices/arc/:id/stop` | Aucun effet |
 
 ### Prises AC (DIO Chacon)
@@ -386,11 +396,9 @@ Si les commandes depuis Home Assistant ne fonctionnent pas :
 - `POST /api/devices/arc/pair` - Appairer un volet (envoie ON)
 - `POST /api/devices/arc/confirm-pair` - Confirmer l'appairage d'un volet
 - `POST /api/devices/arc/:id/unpair` - Désappairer un volet (envoie OFF)
-- `POST /api/devices/arc/:id/on` - Monter le volet (ON/UP)
-- `POST /api/devices/arc/:id/off` - Descendre le volet (OFF/DOWN)
+- `POST /api/devices/arc/:id/on` - Monter le volet
+- `POST /api/devices/arc/:id/off` - Descendre le volet
 - `POST /api/devices/arc/:id/stop` - Arrêter le volet
-- `POST /api/devices/arc/:id/up` - Alias pour ON
-- `POST /api/devices/arc/:id/down` - Alias pour OFF
 
 ### Endpoints AC
 

@@ -1063,12 +1063,26 @@ function handleReceivedMessage(msg) {
 
     if (isTempSensor) {
         // Extraire l'ID de la sonde depuis différents champs possibles
-        const sensorId = msg.id || msg.sensorId || msg.ID || `temp_${msg.channel || msg.channelNumber || 0}`;
+        let rawSensorId = msg.id || msg.sensorId || msg.ID || `temp_${msg.channel || msg.channelNumber || 0}`;
+        
+        // Normaliser l'ID pour éviter les doublons
+        // Pour les IDs hexadécimaux (0x6A03, 6A03, etc.), normaliser en majuscules sans préfixe 0x
+        let sensorId = String(rawSensorId).trim();
+        if (sensorId.toLowerCase().startsWith('0x')) {
+            sensorId = sensorId.substring(2).toUpperCase();
+        } else if (/^[0-9A-Fa-f]{4}$/.test(sensorId)) {
+            // Si c'est un ID hexadécimal de 4 caractères, le mettre en majuscules
+            sensorId = sensorId.toUpperCase();
+        } else {
+            // Pour les autres formats, garder tel quel mais normaliser la casse
+            sensorId = sensorId.toUpperCase();
+        }
+        
         const id = `TEMP_HUM_${sensorId}`;
 
         if (!devices[id]) {
             const sensorType = msg.type === 'temperaturehumidity1' || msg.subtype === 13 ? 'TH13/WS1700' : 'Alecto';
-            log('info', `🆕 Nouvelle sonde température/humidité détectée (${sensorType}): ID ${sensorId}, Channel ${msg.channel || 'N/A'}`);
+            log('info', `🆕 Nouvelle sonde température/humidité détectée (${sensorType}): ID ${sensorId} (raw: ${rawSensorId}), Channel ${msg.channel || 'N/A'}`);
             devices[id] = {
                 type: 'TEMP_HUM',
                 haDeviceType: 'sensor', // Les capteurs sont toujours des sensors
@@ -1084,6 +1098,12 @@ function handleReceivedMessage(msg) {
             // Publier la découverte Home Assistant
             if (mqttHelper && mqttHelper.connected) {
                 mqttHelper.publishDeviceDiscovery({ ...devices[id], id: id });
+            }
+        } else {
+            // Log si on reçoit un message pour une sonde déjà connue avec un ID différent (pour debug)
+            const existingSensorId = devices[id].sensorId;
+            if (existingSensorId !== sensorId && rawSensorId !== existingSensorId) {
+                log('debug', `📡 Message reçu pour sonde existante ${id} (ID normalisé: ${sensorId}, raw: ${rawSensorId})`);
             }
         }
 
@@ -1146,14 +1166,28 @@ function recoverDevicesFromMQTT() {
             if (topicParts.length < 4) return;
 
             const haDeviceType = topicParts[1]; // 'cover', 'switch', 'sensor'
-            const deviceId = topicParts[3]; // L'ID de l'appareil
+            let deviceId = topicParts[3]; // L'ID de l'appareil
 
             // Ignorer si c'est un sensor (temp/hum) car ils sont gérés différemment
             if (haDeviceType === 'sensor' && (deviceId.includes('_temperature') || deviceId.includes('_humidity'))) {
                 return; // On gère les sensors différemment
             }
 
-            // Vérifier si l'appareil existe déjà
+            // Pour les sondes TEMP_HUM, normaliser l'ID avant de vérifier s'il existe
+            if (deviceId.startsWith('TEMP_HUM_')) {
+                let rawSensorId = deviceId.replace('TEMP_HUM_', '');
+                let sensorId = String(rawSensorId).trim();
+                if (sensorId.toLowerCase().startsWith('0x')) {
+                    sensorId = sensorId.substring(2).toUpperCase();
+                } else if (/^[0-9A-Fa-f]{4}$/.test(sensorId)) {
+                    sensorId = sensorId.toUpperCase();
+                } else {
+                    sensorId = sensorId.toUpperCase();
+                }
+                deviceId = `TEMP_HUM_${sensorId}`;
+            }
+
+            // Vérifier si l'appareil existe déjà (après normalisation pour TEMP_HUM)
             if (devices[deviceId]) {
                 log('debug', `📋 Appareil ${deviceId} déjà présent, ignoré`);
                 return;
@@ -1195,8 +1229,9 @@ function recoverDevicesFromMQTT() {
                     };
                 }
             } else if (deviceId.startsWith('TEMP_HUM_')) {
-                // Format: TEMP_HUM_XXXXX
+                // Format: TEMP_HUM_XXXXX (deviceId est déjà normalisé avant la vérification d'existence)
                 const sensorId = deviceId.replace('TEMP_HUM_', '');
+                
                 device = {
                     type: 'TEMP_HUM',
                     haDeviceType: 'sensor',
@@ -1670,9 +1705,9 @@ function sendArcCommand(deviceId, command, res) {
         // Pour Lighting1 (ARC), utiliser les méthodes wrapper switchUp, switchDown, stop
         // Note: Les commandes ON/OFF/STOP ne modifient pas l'état d'appairage
         // L'appairage/désappairage se fait uniquement via les endpoints /pair et /unpair
-        if (command === 'on' || command === 'up') {
+        if (command === 'on') {
             lighting1Handler.switchUp(device.houseCode, device.unitCode, callback);
-        } else if (command === 'off' || command === 'down') {
+        } else if (command === 'off') {
             lighting1Handler.switchDown(device.houseCode, device.unitCode, callback);
         } else if (command === 'stop') {
             lighting1Handler.stop(device.houseCode, device.unitCode, callback);
@@ -1719,38 +1754,12 @@ app.post('/api/devices/arc/:id/on', (req, res) => {
     }
 });
 
-// Commandes ARC - UP (alias pour ON)
-app.post('/api/devices/arc/:id/up', (req, res) => {
-    try {
-        sendArcCommand(req.params.id, 'up', res);
-    } catch (error) {
-        log('error', `❌ Erreur lors de l'envoi de la commande UP:`, error);
-        res.status(500).json({
-            status: 'error',
-            error: error.message
-        });
-    }
-});
-
 // Commandes ARC - OFF (fermer/descendre)
 app.post('/api/devices/arc/:id/off', (req, res) => {
     try {
         sendArcCommand(req.params.id, 'off', res);
     } catch (error) {
         log('error', `❌ Erreur lors de l'envoi de la commande OFF:`, error);
-        res.status(500).json({
-            status: 'error',
-            error: error.message
-        });
-    }
-});
-
-// Commandes ARC - DOWN (alias pour OFF)
-app.post('/api/devices/arc/:id/down', (req, res) => {
-    try {
-        sendArcCommand(req.params.id, 'down', res);
-    } catch (error) {
-        log('error', `❌ Erreur lors de l'envoi de la commande DOWN:`, error);
         res.status(500).json({
             status: 'error',
             error: error.message
@@ -2401,8 +2410,6 @@ if (API_PORT !== 0) {
         log('info', `   POST /api/devices/arc/:id/on - Ouvrir/Monter un appareil ARC`);
         log('info', `   POST /api/devices/arc/:id/off - Fermer/Descendre un appareil ARC`);
         log('info', `   POST /api/devices/arc/:id/stop - Arrêter un appareil ARC`);
-        log('info', `   POST /api/devices/arc/:id/up - Alias pour ON`);
-        log('info', `   POST /api/devices/arc/:id/down - Alias pour OFF`);
         log('info', `   POST /api/devices/ac - Ajouter une prise AC`);
         log('info', `   POST /api/devices/ac/pair - Appairer une prise AC (envoie ON)`);
         log('info', `   POST /api/devices/ac/confirm-pair - Confirmer l'appairage AC`);
