@@ -2,9 +2,12 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.1.13**
+**Version actuelle : 2.1.14**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.14
+- **Correction build Docker** : ajout de `rfxcom_command_queue.js` dans le Dockerfile pour que l'add-on démarre correctement dans Home Assistant (évite l'erreur « Cannot find module './rfxcom_command_queue' »)
 
 ### Version 2.1.13
 - **Tests** : tests unitaires pour la file d'attente (`rfxcom_command_queue.test.js`), adaptation des tests commandes et rfxcom_ready

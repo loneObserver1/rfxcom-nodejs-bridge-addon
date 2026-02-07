@@ -5,6 +5,12 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.14] - 2026-02-07
+
+### 🔧 Corrections
+
+- **Build Docker** : copie de `rfxcom_command_queue.js` dans l'image pour que l'add-on démarre dans Home Assistant (corrige « Cannot find module './rfxcom_command_queue' »)
+
 ## [2.1.13] - 2026-02-07
 
 ### 🛠️ Améliorations

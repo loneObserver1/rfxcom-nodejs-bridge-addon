@@ -21,6 +21,7 @@ RUN npm install --production
 # Copy data for add-on
 COPY app.js /app/
 COPY mqtt_helper.js /app/
+COPY rfxcom_command_queue.js /app/
 COPY run.sh /
 COPY public /app/public
 RUN chmod a+x /run.sh
