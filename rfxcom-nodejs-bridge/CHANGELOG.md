@@ -5,6 +5,24 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.13] - 2026-02-07
+
+### 🛠️ Améliorations
+
+- **Tests pour la file d'attente** : tests unitaires `rfxcom_command_queue.test.js` (init, jobs invalides, ARC/AC, traitement séquentiel, erreurs)
+- **Queue** : try/catch autour des appels aux handlers pour ne pas bloquer la file en cas d’exception synchrone
+- **Tests** : adaptation de `commands.test.js` (initCommandQueue, rfxtrxReady) et de `rfxcom_ready.test.js` (exception gérée via la queue)
+
+## [2.1.12] - 2026-02-07
+
+### 🛠️ Améliorations
+
+- **File d'attente des commandes RFXCOM** :
+  - Nouvelle file d'attente dans l'add-on : une seule commande est envoyée à la fois au module RFXCOM
+  - Évite les timeouts « timed out waiting for response » lorsque plusieurs commandes arrivent en rafale (MQTT, API, scènes)
+  - Toutes les commandes (MQTT switch/cover, API on/off/stop, pair/unpair) passent par cette file
+  - Le module RFXCOM ne reçoit qu'une commande à la fois ; la suivante est envoyée après la fin (callback ou timeout) de la précédente
+
 ## [2.1.11] - 2025-01-02
 
 ### 🔧 Corrections

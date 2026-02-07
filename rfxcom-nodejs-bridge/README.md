@@ -2,9 +2,18 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.1.11**
+**Version actuelle : 2.1.13**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.13
+- **Tests** : tests unitaires pour la file d'attente (`rfxcom_command_queue.test.js`), adaptation des tests commandes et rfxcom_ready
+
+### Version 2.1.12
+- **File d'attente des commandes RFXCOM** :
+  - Une seule commande est envoyée à la fois au module RFXCOM (file dans l'add-on avant la queue du package rfxcom)
+  - Évite les timeouts lorsque plusieurs commandes arrivent en rafale (scènes, MQTT, API)
+  - Toutes les commandes (switch/cover MQTT, API on/off/stop, pair/unpair) passent par cette file
 
 ### Version 2.1.11
 - **Correction du problème de doublons pour les sondes Alecto** :
@@ -485,4 +494,14 @@ curl -X POST http://localhost:8889/api/devices/ac/AC_02382C82_2/on
 1. Vérifiez que l'appareil est bien appairé (statut dans l'interface)
 2. Vérifiez que vous utilisez la bonne adresse
 3. Vérifiez les logs pour voir si les commandes sont bien envoyées
+
+### Connexion RFXCOM : l'événement « receiverstarted » n'est pas reçu
+
+Si dans les logs vous voyez « RFXCOM marqué comme prêt (via fallback après 5 secondes) » et « La queue de transmission n'a pas été démarrée automatiquement, démarrage forcé », cela signifie que le **handshake série** avec le RFXtrx ne s'est pas terminé (le module n'a pas renvoyé la confirmation « Copyright RFXCOM »). L'add-on envoie quand même les commandes, mais **les appareils peuvent ne pas réagir** si le RFXtrx n'est pas réellement prêt.
+
+À faire :
+
+1. **Vérifier le câble USB et le port** : `SERIAL_PORT` (souvent `/dev/ttyUSB0`). Débrancher/rebrancher le RFXtrx, vérifier qu'aucun autre service n'utilise le port.
+2. **Activer le mode debug** : dans la configuration de l'add-on, ajouter `LOG_LEVEL: debug`. Redémarrer et consulter les logs : vous verrez le trafic série (octets envoyés/reçus). Si vous ne voyez **aucune** ligne du type « Response » ou « Copyright RFXCOM » après les commandes envoyées, le RFXtrx ne répond pas (mauvais port, baud rate, ou matériel).
+3. **Vérifier le matériel** : LED du RFXtrx, alimentation, firmware compatible (le package attend une réponse au « Start receiver »).
 

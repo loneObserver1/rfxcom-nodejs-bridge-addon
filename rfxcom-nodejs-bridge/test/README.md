@@ -40,7 +40,21 @@ npx jest test/mqtt_helper.test.js
 - **`mqtt.test.js`** : Tests de l'intégration MQTT via API
 - **`rfxcom.test.js`** : Tests de l'intégration RFXCOM via API
 - **`rfxcom_ready.test.js`** : Tests de la vérification que RFXCOM est prêt avant d'envoyer des commandes (v2.1.8+)
+- **`rfxcom_command_queue.test.js`** : Tests unitaires de la file d'attente des commandes RFXCOM (v2.1.12+) — traitement séquentiel, callbacks, erreurs
 - **`utils.test.js`** : Tests des fonctions utilitaires via API
+
+## File d'attente des commandes (v2.1.12)
+
+Le fichier `rfxcom_command_queue.test.js` teste le module `rfxcom_command_queue.js` :
+
+- **init et push sans init** : la queue doit être initialisée avant tout `push`, sinon la commande est ignorée
+- **Jobs invalides** : jobs sans `type`, sans `deviceId` ou sans `command` sont ignorés
+- **Commandes ARC** : `on`/`off`/`stop` et mapping `open`/`close` (cover)
+- **Commandes AC** : `on`/`off` et format `0x{deviceId}/{unitCode}`
+- **Traitement séquentiel** : une seule commande traitée à la fois, la suivante après le callback
+- **Erreurs** : appareil introuvable, handler null, callback d’erreur du package rfxcom
+
+Les tests des commandes API (`commands.test.js`) initialisent désormais `rfxtrxReady` et `initCommandQueue()` pour que les commandes passent par la file.
 
 ## Nouveaux tests (v2.1.8)
 

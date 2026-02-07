@@ -433,26 +433,29 @@ describe('Vérification que RFXCOM est prêt (rfxtrxReady)', () => {
 
             const deviceId = createResponse.body.id;
             
-            // S'assurer que les handlers sont définis et que RFXCOM est prêt
+            // S'assurer que les handlers sont définis, RFXCOM prêt et file d'attente initialisée
             appModule.lighting1Handler = mockLighting1;
             if (appModule.rfxtrxReady !== undefined) {
                 appModule.rfxtrxReady = true;
             }
+            if (typeof appModule.initCommandQueue === 'function') {
+                appModule.initCommandQueue();
+            }
             
-            // Simuler une exception dans switchUp
+            // Simuler une exception dans switchUp (lors du traitement par la queue)
             mockLighting1.switchUp.mockImplementation(() => {
                 throw new Error('Exception RFXCOM');
             });
             
-            // Envoyer une commande via API
+            // Avec la file d'attente, l'API retourne 200 immédiatement (commande en file)
             const response = await request(app)
                 .post(`/api/devices/arc/${deviceId}/on`);
             
-            // La commande devrait échouer avec une erreur 500 (ou 503 si rfxtrxReady est false)
-            expect([500, 503]).toContain(response.status);
-            if (response.status === 500) {
-                expect(response.body.error).toContain('Exception');
-            }
+            expect(response.status).toBe(200);
+            expect(response.body).toHaveProperty('status', 'success');
+            // La queue traite la commande en async ; l'exception est gérée dans la queue (onDone(err))
+            await new Promise(r => setImmediate(r));
+            expect(mockLighting1.switchUp).toHaveBeenCalled();
         });
     });
 });

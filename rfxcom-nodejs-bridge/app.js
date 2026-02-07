@@ -3,6 +3,7 @@ const fs = require('fs');
 const express = require('express');
 const http = require('http');
 const MQTTHelper = require('./mqtt_helper');
+const commandQueue = require('./rfxcom_command_queue');
 
 // Récupérer les variables d'environnement
 const SERIAL_PORT = process.env.SERIAL_PORT || '/dev/ttyUSB0';
@@ -285,34 +286,34 @@ function initializeMQTT() {
                             log('info', `🎯 Commande ARC reçue: ${messageStr}`);
 
                             if (messageStr === 'OPEN' || messageStr === 'open') {
-                                lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande OPEN: ${error.message}`);
-                                    } else {
+                                commandQueue.push({
+                                    type: 'arc',
+                                    deviceId,
+                                    command: 'open',
+                                    onSuccess: () => {
                                         log('info', `✅ Commande OPEN envoyée à ${device.name}`);
-                                        if (mqttHelper) {
-                                            mqttHelper.publishCoverState(deviceId, 'open');
-                                        }
-                                    }
+                                        if (mqttHelper) mqttHelper.publishCoverState(deviceId, 'open');
+                                    },
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande OPEN: ${err.message}`); }
                                 });
                             } else if (messageStr === 'CLOSE' || messageStr === 'close') {
-                                lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande CLOSE: ${error.message}`);
-                                    } else {
+                                commandQueue.push({
+                                    type: 'arc',
+                                    deviceId,
+                                    command: 'close',
+                                    onSuccess: () => {
                                         log('info', `✅ Commande CLOSE envoyée à ${device.name}`);
-                                        if (mqttHelper) {
-                                            mqttHelper.publishCoverState(deviceId, 'closed');
-                                        }
-                                    }
+                                        if (mqttHelper) mqttHelper.publishCoverState(deviceId, 'closed');
+                                    },
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande CLOSE: ${err.message}`); }
                                 });
                             } else if (messageStr === 'STOP' || messageStr === 'stop') {
-                                lighting1Handler.stop(device.houseCode, device.unitCode, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande STOP: ${error.message}`);
-                                    } else {
-                                        log('info', `✅ Commande STOP envoyée à ${device.name}`);
-                                    }
+                                commandQueue.push({
+                                    type: 'arc',
+                                    deviceId,
+                                    command: 'stop',
+                                    onSuccess: () => log('info', `✅ Commande STOP envoyée à ${device.name}`),
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande STOP: ${err.message}`); }
                                 });
                             } else {
                                 log('warn', `⚠️ Commande ARC inconnue: ${messageStr}`);
@@ -321,46 +322,42 @@ function initializeMQTT() {
                     }
                     // Pour AC avec haDeviceType='cover', utiliser lighting2Handler
                     else if (device.type === 'AC' && lighting2Handler) {
-                        // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
-                        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
-
                         if (commandType === 'set') {
                             const messageStr = message.toString().trim();
                             log('info', `🎯 Commande AC (cover) reçue: ${messageStr}`);
 
                             if (messageStr === 'OPEN' || messageStr === 'open') {
-                                lighting2Handler.switchOn(deviceIdFormatted, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande OPEN: ${error.message}`);
-                                    } else {
+                                commandQueue.push({
+                                    type: 'ac',
+                                    deviceId,
+                                    command: 'open',
+                                    onSuccess: () => {
                                         log('info', `✅ Commande OPEN envoyée à ${device.name}`);
-                                        if (mqttHelper) {
-                                            mqttHelper.publishCoverState(deviceId, 'open');
-                                        }
-                                    }
+                                        if (mqttHelper) mqttHelper.publishCoverState(deviceId, 'open');
+                                    },
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande OPEN: ${err.message}`); }
                                 });
                             } else if (messageStr === 'CLOSE' || messageStr === 'close') {
-                                lighting2Handler.switchOff(deviceIdFormatted, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande CLOSE: ${error.message}`);
-                                    } else {
+                                commandQueue.push({
+                                    type: 'ac',
+                                    deviceId,
+                                    command: 'close',
+                                    onSuccess: () => {
                                         log('info', `✅ Commande CLOSE envoyée à ${device.name}`);
-                                        if (mqttHelper) {
-                                            mqttHelper.publishCoverState(deviceId, 'closed');
-                                        }
-                                    }
+                                        if (mqttHelper) mqttHelper.publishCoverState(deviceId, 'closed');
+                                    },
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande CLOSE: ${err.message}`); }
                                 });
                             } else if (messageStr === 'STOP' || messageStr === 'stop') {
-                                // Pour AC, STOP = OFF
-                                lighting2Handler.switchOff(deviceIdFormatted, (error) => {
-                                    if (error) {
-                                        log('error', `❌ Erreur commande STOP: ${error.message}`);
-                                    } else {
+                                commandQueue.push({
+                                    type: 'ac',
+                                    deviceId,
+                                    command: 'stop',
+                                    onSuccess: () => {
                                         log('info', `✅ Commande STOP envoyée à ${device.name}`);
-                                        if (mqttHelper) {
-                                            mqttHelper.publishCoverState(deviceId, 'open');
-                                        }
-                                    }
+                                        if (mqttHelper) mqttHelper.publishCoverState(deviceId, 'open');
+                                    },
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande STOP: ${err.message}`); }
                                 });
                             } else {
                                 log('warn', `⚠️ Commande AC (cover) inconnue: ${messageStr}`);
@@ -395,46 +392,28 @@ function initializeMQTT() {
 
                             if (messageStr === 'ON' || messageStr === 'on') {
                                 log('info', `📤 Envoi de la commande ON au module RFXCOM pour ${device.name}...`);
-                                try {
-                                    lighting2Handler.switchOn(deviceIdFormatted, (error) => {
-                                        if (error) {
-                                            log('error', `❌ Erreur commande ON: ${error.message}`);
-                                        } else {
-                                            log('info', `✅ Commande ON envoyée à ${device.name}`);
-                                            if (mqttHelper) {
-                                                mqttHelper.publishSwitchState(deviceId, 'ON');
-                                            }
-                                        }
-                                    });
-                                    // Log immédiatement après l'appel pour confirmer que la méthode a été appelée
-                                    log('info', `📡 Méthode switchOn appelée pour ${deviceIdFormatted}`);
-                                } catch (err) {
-                                    log('error', `❌ Exception lors de l'appel switchOn: ${err.message}`);
-                                    if (LOG_LEVEL === 'debug') {
-                                        log('debug', `   Stack: ${err.stack}`);
-                                    }
-                                }
+                                commandQueue.push({
+                                    type: 'ac',
+                                    deviceId,
+                                    command: 'on',
+                                    onSuccess: () => {
+                                        log('info', `✅ Commande ON envoyée à ${device.name}`);
+                                        if (mqttHelper) mqttHelper.publishSwitchState(deviceId, 'ON');
+                                    },
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande ON: ${err.message}`); }
+                                });
                             } else if (messageStr === 'OFF' || messageStr === 'off') {
                                 log('info', `📤 Envoi de la commande OFF au module RFXCOM pour ${device.name}...`);
-                                try {
-                                    lighting2Handler.switchOff(deviceIdFormatted, (error) => {
-                                        if (error) {
-                                            log('error', `❌ Erreur commande OFF: ${error.message}`);
-                                        } else {
-                                            log('info', `✅ Commande OFF envoyée à ${device.name}`);
-                                            if (mqttHelper) {
-                                                mqttHelper.publishSwitchState(deviceId, 'OFF');
-                                            }
-                                        }
-                                    });
-                                    // Log immédiatement après l'appel pour confirmer que la méthode a été appelée
-                                    log('info', `📡 Méthode switchOff appelée pour ${deviceIdFormatted}`);
-                                } catch (err) {
-                                    log('error', `❌ Exception lors de l'appel switchOff: ${err.message}`);
-                                    if (LOG_LEVEL === 'debug') {
-                                        log('debug', `   Stack: ${err.stack}`);
-                                    }
-                                }
+                                commandQueue.push({
+                                    type: 'ac',
+                                    deviceId,
+                                    command: 'off',
+                                    onSuccess: () => {
+                                        log('info', `✅ Commande OFF envoyée à ${device.name}`);
+                                        if (mqttHelper) mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                    },
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande OFF: ${err.message}`); }
+                                });
                             } else {
                                 log('warn', `⚠️ Commande AC inconnue: ${messageStr}`);
                             }
@@ -461,44 +440,28 @@ function initializeMQTT() {
 
                             if (messageStr === 'ON' || messageStr === 'on') {
                                 log('info', `📤 Envoi de la commande ON au module RFXCOM pour ${device.name}...`);
-                                try {
-                                    lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
-                                        if (error) {
-                                            log('error', `❌ Erreur commande ON: ${error.message}`);
-                                        } else {
-                                            log('info', `✅ Commande ON envoyée à ${device.name}`);
-                                            if (mqttHelper) {
-                                                mqttHelper.publishSwitchState(deviceId, 'ON');
-                                            }
-                                        }
-                                    });
-                                    log('info', `📡 Méthode switchUp appelée pour ARC ${device.houseCode}${device.unitCode}`);
-                                } catch (err) {
-                                    log('error', `❌ Exception lors de l'appel switchUp: ${err.message}`);
-                                    if (LOG_LEVEL === 'debug') {
-                                        log('debug', `   Stack: ${err.stack}`);
-                                    }
-                                }
+                                commandQueue.push({
+                                    type: 'arc',
+                                    deviceId,
+                                    command: 'on',
+                                    onSuccess: () => {
+                                        log('info', `✅ Commande ON envoyée à ${device.name}`);
+                                        if (mqttHelper) mqttHelper.publishSwitchState(deviceId, 'ON');
+                                    },
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande ON: ${err.message}`); }
+                                });
                             } else if (messageStr === 'OFF' || messageStr === 'off') {
                                 log('info', `📤 Envoi de la commande OFF au module RFXCOM pour ${device.name}...`);
-                                try {
-                                    lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
-                                        if (error) {
-                                            log('error', `❌ Erreur commande OFF: ${error.message}`);
-                                        } else {
-                                            log('info', `✅ Commande OFF envoyée à ${device.name}`);
-                                            if (mqttHelper) {
-                                                mqttHelper.publishSwitchState(deviceId, 'OFF');
-                                            }
-                                        }
-                                    });
-                                    log('info', `📡 Méthode switchDown appelée pour ARC ${device.houseCode}${device.unitCode}`);
-                                } catch (err) {
-                                    log('error', `❌ Exception lors de l'appel switchDown: ${err.message}`);
-                                    if (LOG_LEVEL === 'debug') {
-                                        log('debug', `   Stack: ${err.stack}`);
-                                    }
-                                }
+                                commandQueue.push({
+                                    type: 'arc',
+                                    deviceId,
+                                    command: 'off',
+                                    onSuccess: () => {
+                                        log('info', `✅ Commande OFF envoyée à ${device.name}`);
+                                        if (mqttHelper) mqttHelper.publishSwitchState(deviceId, 'OFF');
+                                    },
+                                    onDone: (err) => { if (err) log('error', `❌ Erreur commande OFF: ${err.message}`); }
+                                });
                             } else {
                                 log('warn', `⚠️ Commande ARC (switch) inconnue: ${messageStr}`);
                             }
@@ -532,6 +495,17 @@ function initializeMQTT() {
         log('warn', `⚠️ Impossible d'initialiser MQTT: ${error.message}`);
         log('warn', `⚠️ Les entités Home Assistant ne seront pas créées automatiquement`);
     }
+}
+
+// Initialise la file d'attente des commandes RFXCOM (une commande à la fois vers le module)
+function initCommandQueue() {
+    commandQueue.init({
+        getDevices: () => devices,
+        getLighting1: () => lighting1Handler,
+        getLighting2: () => lighting2Handler,
+        log
+    });
+    log('info', '📋 File d\'attente des commandes RFXCOM initialisée (une commande à la fois)');
 }
 
 // Fonction pour arrêter proprement l'add-on en cas d'erreur RFXCOM critique
@@ -693,6 +667,7 @@ function initializeRFXCOMAsync() {
                     setTimeout(() => {
                         if (!rfxtrxReady && rfxtrx) {
                             rfxtrxReady = true;
+                            initCommandQueue();
                             log('info', `✅ RFXCOM marqué comme prêt (via fallback après 5 secondes depuis 'ready')`);
                             // S'assurer que les listeners sont enregistrés si receiverstarted n'a pas été émis
                             // Cela est particulièrement important quand AUTO_DISCOVERY est activé
@@ -708,6 +683,7 @@ function initializeRFXCOMAsync() {
                                     rfxtrx.initialising = false; // Marquer comme non initialisant pour permettre le démarrage
                                     rfxtrx.TxQ.start();
                                     log('info', `✅ Queue de transmission démarrée avec succès`);
+                                    log('warn', `⚠️ L'événement 'receiverstarted' n'a pas été reçu: le RFXtrx n'a peut-être pas confirmé son initialisation. Si les appareils ne réagissent pas, vérifiez le câble USB, le port série (${SERIAL_PORT}) et lancez avec LOG_LEVEL=debug pour voir le trafic série.`);
                                 } catch (err) {
                                     log('error', `❌ Erreur lors du démarrage forcé de la queue: ${err.message}`);
                                 }
@@ -748,6 +724,7 @@ function initializeRFXCOMAsync() {
         rfxtrx.once('receiverstarted', () => {
             log('info', `✅ Récepteur RFXCOM démarré (événement 'receiverstarted'), enregistrement des listeners...`);
             rfxtrxReady = true; // Marquer RFXCOM comme prêt à recevoir des commandes
+            initCommandQueue();
             registerMessageListeners();
         });
 
@@ -824,6 +801,7 @@ function initializeRFXCOMAsync() {
                     if (!listenersRegistered && rfxtrx) {
                         log('warn', `⚠️ Événement 'receiverstarted' non reçu dans les 5 secondes, enregistrement des listeners de toute façon...`);
                         rfxtrxReady = true; // Marquer RFXCOM comme prêt même sans receiverstarted
+                        initCommandQueue();
                         log('info', `✅ RFXCOM marqué comme prêt (via fallback après 5 secondes)`);
                         registerMessageListeners();
                         // IMPORTANT: Forcer le démarrage de la queue de transmission si initialising est encore true
@@ -834,6 +812,7 @@ function initializeRFXCOMAsync() {
                                 rfxtrx.initialising = false; // Marquer comme non initialisant pour permettre le démarrage
                                 rfxtrx.TxQ.start();
                                 log('info', `✅ Queue de transmission démarrée avec succès`);
+                                log('warn', `⚠️ L'événement 'receiverstarted' n'a pas été reçu: le RFXtrx n'a peut-être pas confirmé son initialisation. Si les appareils ne réagissent pas, vérifiez le câble USB, le port série (${SERIAL_PORT}) et lancez avec LOG_LEVEL=debug pour voir le trafic série.`);
                             } catch (err) {
                                 log('error', `❌ Erreur lors du démarrage forcé de la queue: ${err.message}`);
                             }
@@ -842,6 +821,7 @@ function initializeRFXCOMAsync() {
                         // Si listeners sont enregistrés mais rfxtrxReady n'est pas true, le marquer maintenant
                         // Cela peut arriver si receiverstarted est émis mais rfxtrxReady n'a pas été mis à jour
                         rfxtrxReady = true;
+                        initCommandQueue();
                         log('info', `✅ RFXCOM marqué comme prêt (via fallback après 5 secondes)`);
                         // S'assurer que les listeners sont enregistrés même si receiverstarted n'a pas été émis
                         if (!listenersRegistered) {
@@ -1504,29 +1484,29 @@ app.post('/api/devices/arc/pair', (req, res) => {
             });
         }
 
-        // Envoyer ON pour l'appairage (appairage = action ON)
-        // Pour Lighting1 (ARC), on passe houseCode et unitCode séparément
-        lighting1Handler.switchUp(device.houseCode, device.unitCode, (error) => {
-            if (error) {
-                log('error', `❌ Erreur lors de l'appairage:`, error);
-                return res.status(500).json({
-                    status: 'error',
-                    error: error.message
+        // Envoyer ON pour l'appairage (appairage = action ON) via la file d'attente
+        commandQueue.push({
+            type: 'arc',
+            deviceId,
+            command: 'on',
+            onDone: (error) => {
+                if (error) {
+                    log('error', `❌ Erreur lors de l'appairage:`, error);
+                    return res.status(500).json({
+                        status: 'error',
+                        error: error.message
+                    });
+                }
+                log('info', `✅ Commande d'appairage (ON) envoyée pour ${device.name}`);
+                devices[deviceId].pairingSent = true;
+                saveDevices();
+                res.json({
+                    status: 'success',
+                    message: 'Commande d\'appairage (ON) envoyée. Vérifiez si l\'appareil a répondu.',
+                    device: devices[deviceId],
+                    requiresConfirmation: true
                 });
             }
-
-            log('info', `✅ Commande d'appairage (ON) envoyée pour ${device.name}`);
-
-            // Marquer que la commande d'appairage a été envoyée (attendre confirmation)
-            devices[deviceId].pairingSent = true;
-            saveDevices();
-
-            res.json({
-                status: 'success',
-                message: 'Commande d\'appairage (ON) envoyée. Vérifiez si l\'appareil a répondu.',
-                device: devices[deviceId],
-                requiresConfirmation: true
-            });
         });
     } catch (error) {
         log('error', `❌ Erreur lors de l'appairage:`, error);
@@ -1612,31 +1592,32 @@ app.post('/api/devices/arc/:id/unpair', (req, res) => {
             });
         }
 
-        // Envoyer OFF pour le désappairage (désappairage = action OFF)
-        lighting1Handler.switchDown(device.houseCode, device.unitCode, (error) => {
-            if (error) {
-                log('error', `❌ Erreur lors du désappairage:`, error);
-                return res.status(500).json({
-                    status: 'error',
-                    error: error.message
+        // Envoyer OFF pour le désappairage (désappairage = action OFF) via la file d'attente
+        commandQueue.push({
+            type: 'arc',
+            deviceId,
+            command: 'off',
+            onDone: (error) => {
+                if (error) {
+                    log('error', `❌ Erreur lors du désappairage:`, error);
+                    return res.status(500).json({
+                        status: 'error',
+                        error: error.message
+                    });
+                }
+                log('info', `✅ Commande de désappairage (OFF) envoyée pour ${device.name}`);
+                devices[deviceId].paired = false;
+                devices[deviceId].pairingSent = false;
+                if (devices[deviceId].pairedAt) {
+                    delete devices[deviceId].pairedAt;
+                }
+                saveDevices();
+                res.json({
+                    status: 'success',
+                    message: 'Désappairage effectué. L\'appareil ne répondra plus aux commandes.',
+                    device: devices[deviceId]
                 });
             }
-
-            log('info', `✅ Commande de désappairage (OFF) envoyée pour ${device.name}`);
-
-            // Marquer comme désappairé
-            devices[deviceId].paired = false;
-            devices[deviceId].pairingSent = false;
-            if (devices[deviceId].pairedAt) {
-                delete devices[deviceId].pairedAt;
-            }
-            saveDevices();
-
-            res.json({
-                status: 'success',
-                message: 'Désappairage effectué. L\'appareil ne répondra plus aux commandes.',
-                device: devices[deviceId]
-            });
         });
     } catch (error) {
         log('error', `❌ Erreur lors du désappairage:`, error);
@@ -1678,67 +1659,30 @@ function sendArcCommand(deviceId, command, res) {
         });
     }
 
-    // Envoyer la commande
+    if (command !== 'on' && command !== 'off' && command !== 'stop') {
+        return res.status(400).json({
+            status: 'error',
+            error: 'Commande invalide'
+        });
+    }
+
     log('info', `📤 Envoi de la commande ${command} à ${device.name} (House: ${device.houseCode}, Unit: ${device.unitCode})`);
 
-    let responseSent = false;
-
-    // Le callback du package rfxcom n'est souvent appelé qu'en cas d'erreur
-    // On envoie donc la réponse immédiatement après l'appel, et on utilise le callback uniquement pour les erreurs
-    const callback = (error) => {
-        if (responseSent) {
-            return; // Réponse déjà envoyée
+    commandQueue.push({
+        type: 'arc',
+        deviceId,
+        command,
+        onDone: (err) => {
+            if (err) log('error', `❌ Erreur lors de l'envoi de la commande ${command}:`, err.message);
         }
+    });
 
-        if (error) {
-            responseSent = true;
-            log('error', `❌ Erreur lors de l'envoi de la commande ${command}:`, error);
-            return res.status(500).json({
-                status: 'error',
-                error: error.message
-            });
-        }
-        // En cas de succès, le callback n'est généralement pas appelé par rfxcom
-    };
-
-    try {
-        // Pour Lighting1 (ARC), utiliser les méthodes wrapper switchUp, switchDown, stop
-        // Note: Les commandes ON/OFF/STOP ne modifient pas l'état d'appairage
-        // L'appairage/désappairage se fait uniquement via les endpoints /pair et /unpair
-        if (command === 'on') {
-            lighting1Handler.switchUp(device.houseCode, device.unitCode, callback);
-        } else if (command === 'off') {
-            lighting1Handler.switchDown(device.houseCode, device.unitCode, callback);
-        } else if (command === 'stop') {
-            lighting1Handler.stop(device.houseCode, device.unitCode, callback);
-        } else {
-            return res.status(400).json({
-                status: 'error',
-                error: 'Commande invalide'
-            });
-        }
-
-        // Envoyer la réponse immédiatement après l'appel
-        // Le package rfxcom envoie la commande de manière synchrone ou asynchrone
-        // mais ne confirme généralement pas le succès via le callback
-        responseSent = true;
-        log('info', `✅ Commande ${command} transmise à ${device.name} via RFXCOM`);
-        res.json({
-            status: 'success',
-            message: `Commande ${command} envoyée avec succès`,
-            device: deviceId,
-            command: command
-        });
-    } catch (error) {
-        if (!responseSent) {
-            responseSent = true;
-            log('error', `❌ Exception lors de l'envoi de la commande ${command}:`, error);
-            return res.status(500).json({
-                status: 'error',
-                error: error.message
-            });
-        }
-    }
+    res.json({
+        status: 'success',
+        message: `Commande ${command} mise en file d'attente`,
+        device: deviceId,
+        command: command
+    });
 }
 
 // Commandes ARC - ON (ouvrir/monter)
@@ -1811,63 +1755,30 @@ function sendAcCommand(deviceId, command, res) {
         });
     }
 
-    // Envoyer la commande
+    if (command !== 'on' && command !== 'off') {
+        return res.status(400).json({
+            status: 'error',
+            error: 'Commande invalide (utilisez "on" ou "off")'
+        });
+    }
+
     log('info', `📤 Envoi de la commande ${command} à ${device.name} (Device ID: ${device.deviceId}, Unit: ${device.unitCode})`);
 
-    let responseSent = false;
-
-    // Le callback du package rfxcom n'est souvent appelé qu'en cas d'erreur
-    const callback = (error) => {
-        if (responseSent) {
-            return;
+    commandQueue.push({
+        type: 'ac',
+        deviceId,
+        command,
+        onDone: (err) => {
+            if (err) log('error', `❌ Erreur lors de l'envoi de la commande ${command}:`, err.message);
         }
+    });
 
-        if (error) {
-            responseSent = true;
-            log('error', `❌ Erreur lors de l'envoi de la commande ${command}:`, error);
-            return res.status(500).json({
-                status: 'error',
-                error: error.message
-            });
-        }
-    };
-
-    try {
-        // Pour Lighting2 (AC), on utilise le format "0x{deviceId}/{unitCode}"
-        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
-
-        // Note: Les commandes ON/OFF ne modifient pas l'état d'appairage
-        // L'appairage/désappairage se fait uniquement via les endpoints /pair et /unpair
-        if (command === 'on') {
-            lighting2Handler.switchOn(deviceIdFormatted, callback);
-        } else if (command === 'off') {
-            lighting2Handler.switchOff(deviceIdFormatted, callback);
-        } else {
-            return res.status(400).json({
-                status: 'error',
-                error: 'Commande invalide (utilisez "on" ou "off")'
-            });
-        }
-
-        // Envoyer la réponse immédiatement après l'appel
-        responseSent = true;
-        log('info', `✅ Commande ${command} transmise à ${device.name} via RFXCOM`);
-        res.json({
-            status: 'success',
-            message: `Commande ${command} envoyée avec succès`,
-            device: deviceId,
-            command: command
-        });
-    } catch (error) {
-        if (!responseSent) {
-            responseSent = true;
-            log('error', `❌ Exception lors de l'envoi de la commande ${command}:`, error);
-            return res.status(500).json({
-                status: 'error',
-                error: error.message
-            });
-        }
-    }
+    res.json({
+        status: 'success',
+        message: `Commande ${command} mise en file d'attente`,
+        device: deviceId,
+        command: command
+    });
 }
 
 // Ajouter un appareil AC
@@ -2020,29 +1931,29 @@ app.post('/api/devices/ac/pair', (req, res) => {
             });
         }
 
-        // Envoyer ON pour l'appairage (appairage = action ON)
-        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
-        lighting2Handler.switchOn(deviceIdFormatted, (error) => {
-            if (error) {
-                log('error', `❌ Erreur lors de l'appairage:`, error);
-                return res.status(500).json({
-                    status: 'error',
-                    error: error.message
+        // Envoyer ON pour l'appairage (appairage = action ON) via la file d'attente
+        commandQueue.push({
+            type: 'ac',
+            deviceId,
+            command: 'on',
+            onDone: (error) => {
+                if (error) {
+                    log('error', `❌ Erreur lors de l'appairage:`, error);
+                    return res.status(500).json({
+                        status: 'error',
+                        error: error.message
+                    });
+                }
+                log('info', `✅ Commande d'appairage (ON) envoyée pour ${device.name}`);
+                devices[deviceId].pairingSent = true;
+                saveDevices();
+                res.json({
+                    status: 'success',
+                    message: 'Commande d\'appairage (ON) envoyée. Vérifiez si l\'appareil a répondu.',
+                    device: devices[deviceId],
+                    requiresConfirmation: true
                 });
             }
-
-            log('info', `✅ Commande d'appairage (ON) envoyée pour ${device.name}`);
-
-            // Marquer que la commande d'appairage a été envoyée (attendre confirmation)
-            devices[deviceId].pairingSent = true;
-            saveDevices();
-
-            res.json({
-                status: 'success',
-                message: 'Commande d\'appairage (ON) envoyée. Vérifiez si l\'appareil a répondu.',
-                device: devices[deviceId],
-                requiresConfirmation: true
-            });
         });
     } catch (error) {
         log('error', `❌ Erreur lors de l'appairage:`, error);
@@ -2133,32 +2044,32 @@ app.post('/api/devices/ac/:id/unpair', (req, res) => {
             });
         }
 
-        // Envoyer OFF pour le désappairage (désappairage = action OFF)
-        const deviceIdFormatted = `0x${device.deviceId}/${device.unitCode}`;
-        lighting2Handler.switchOff(deviceIdFormatted, (error) => {
-            if (error) {
-                log('error', `❌ Erreur lors du désappairage:`, error);
-                return res.status(500).json({
-                    status: 'error',
-                    error: error.message
+        // Envoyer OFF pour le désappairage (désappairage = action OFF) via la file d'attente
+        commandQueue.push({
+            type: 'ac',
+            deviceId,
+            command: 'off',
+            onDone: (error) => {
+                if (error) {
+                    log('error', `❌ Erreur lors du désappairage:`, error);
+                    return res.status(500).json({
+                        status: 'error',
+                        error: error.message
+                    });
+                }
+                log('info', `✅ Commande de désappairage (OFF) envoyée pour ${device.name}`);
+                devices[deviceId].paired = false;
+                devices[deviceId].pairingSent = false;
+                if (devices[deviceId].pairedAt) {
+                    delete devices[deviceId].pairedAt;
+                }
+                saveDevices();
+                res.json({
+                    status: 'success',
+                    message: 'Désappairage effectué. L\'appareil ne répondra plus aux commandes.',
+                    device: devices[deviceId]
                 });
             }
-
-            log('info', `✅ Commande de désappairage (OFF) envoyée pour ${device.name}`);
-
-            // Marquer comme désappairé
-            devices[deviceId].paired = false;
-            devices[deviceId].pairingSent = false;
-            if (devices[deviceId].pairedAt) {
-                delete devices[deviceId].pairedAt;
-            }
-            saveDevices();
-
-            res.json({
-                status: 'success',
-                message: 'Désappairage effectué. L\'appareil ne répondra plus aux commandes.',
-                device: devices[deviceId]
-            });
         });
     } catch (error) {
         log('error', `❌ Erreur lors du désappairage:`, error);
@@ -2559,6 +2470,9 @@ if (typeof module !== 'undefined' && module.exports) {
         enumerable: true,
         configurable: true
     });
-    
+
+    // Exporter initCommandQueue pour les tests (file d'attente RFXCOM)
+    exported.initCommandQueue = initCommandQueue;
+
     module.exports = exported;
 }
