@@ -1,3 +1,9 @@
+Version 2.6.4
+-------------
+- Callback for queued commands is now invoked on ACK/timeout from the device, not on serial write. This prevents multiple commands from being sent in parallel when the application waits for the callback before sending the next (e.g. rfxcom-nodejs-bridge addon).
+- Add pendingCallbacks and simulateAck() for tests. TxQ timeout handler now invokes user callback with error.
+- Default concurrency remains 3; consumers can pass options.concurrency: 1 for strict one-at-a-time.
+
 Version 2.6.1
 -------------
 Bug fix: correct the format of transmitted ActivLink packet

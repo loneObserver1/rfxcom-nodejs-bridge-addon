@@ -263,6 +263,12 @@ Emitted when a message is received from a Maverick ET-732 BBQ temperature sensor
 ------------------
 Emitted when a message is received from an Alecto temperature/rainfall weather sensor.
 
+"temperaturehumidity1"
+----------------------
+Emitted when a message is received from an Alecto TH13/WS1700 temperature/humidity sensor.
+This event is also emitted for TH13 sensors that use packet type 0x01 (normally reserved for status messages).
+The sensor data includes temperature (with fractional precision), humidity, channel, sequence number, and status information.
+
 "temperature1"
 --------------
 Emitted when a message is received from a temperature sensor (inside/outside air temperature;
