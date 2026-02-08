@@ -5,6 +5,25 @@ Tous les changements notables de ce projet seront documentés dans ce fichier.
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [2.1.17] - 2026-02-08
+
+### 🛠️ Améliorations
+
+- **Tests** : ajout de tests « un appel » et « plusieurs appels en rafale » pour la file d'attente RFXCOM.
+- **Dépendance** : recommandé node-rfxcom 2.6.4+ (callback sur ACK/timeout pour une commande à la fois fiable).
+
+## [2.1.16] - 2026-02-08
+
+### 🛠️ Améliorations
+
+- **Keepalive RFXCOM** : envoi automatique d’une requête getRFXStatus toutes les 12 s lorsque aucune commande n’a été exécutée depuis 10 s. Évite les timeouts après une pause (ex. volets OK puis lumières KO après ~20 s d’inactivité) en maintenant la liaison série active.
+
+## [2.1.15] - 2026-02-08
+
+### 🛠️ Améliorations
+
+- **Reconnexion automatique RFXCOM** : après 5 timeouts consécutifs (« timed out waiting for response »), l'add-on ferme le port série puis le rouvre après 3 secondes, sans redémarrer tout l'add-on. Corrige les cas où la liaison série se dégrade au fil du temps (USB, buffer, firmware).
+
 ## [2.1.14] - 2026-02-07
 
 ### 🔧 Corrections

@@ -10,6 +10,7 @@ let getDevices = null;
 let getLighting1 = null;
 let getLighting2 = null;
 let logFn = null;
+let onCommandComplete = null;
 
 /**
  * Initialise la queue avec les dépendances (à appeler quand RFXCOM est prêt).
@@ -18,12 +19,14 @@ let logFn = null;
  * @param {function(): object|null} deps.getLighting1 - Retourne lighting1Handler
  * @param {function(): object|null} deps.getLighting2 - Retourne lighting2Handler
  * @param {function(level: string, ...args)} deps.log - Fonction de log
+ * @param {function(Error)} [deps.onCommandComplete] - Appelé à chaque fin de commande (err si timeout/erreur) pour détecter les séries de timeouts
  */
 function init(deps) {
     getDevices = deps.getDevices;
     getLighting1 = deps.getLighting1;
     getLighting2 = deps.getLighting2;
     logFn = deps.log;
+    onCommandComplete = deps.onCommandComplete || null;
     queue = [];
     processing = false;
 }
@@ -132,6 +135,7 @@ function finishJob(job, err) {
     try {
         if (job.onDone) job.onDone(err);
         if (!err && job.onSuccess) job.onSuccess();
+        if (onCommandComplete) onCommandComplete(err);
     } catch (e) {
         if (logFn) logFn('error', `❌ Erreur finishJob: ${e.message}`);
     }

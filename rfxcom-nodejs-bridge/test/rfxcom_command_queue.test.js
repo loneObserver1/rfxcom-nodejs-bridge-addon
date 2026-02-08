@@ -183,6 +183,55 @@ describe('File d\'attente des commandes RFXCOM', () => {
         });
     });
 
+    describe('un appel', () => {
+        it('devrait exécuter une seule commande et appeler onDone une fois', (done) => {
+            commandQueue.push({
+                type: 'arc',
+                deviceId: 'ARC_A_1',
+                command: 'on',
+                onDone: (err) => {
+                    expect(err).toBeNull();
+                    expect(mockLighting1.switchUp).toHaveBeenCalledTimes(1);
+                    done();
+                }
+            });
+        });
+    });
+
+    describe('plusieurs appels en rafale', () => {
+        it('devrait traiter 3 commandes en séquence et appeler chaque onDone', (done) => {
+            const order = [];
+            mockLighting1.switchUp.mockImplementation((h, u, cb) => setImmediate(() => cb(null)));
+            mockLighting1.switchDown.mockImplementation((h, u, cb) => setImmediate(() => cb(null)));
+
+            commandQueue.push({
+                type: 'arc',
+                deviceId: 'ARC_A_1',
+                command: 'on',
+                onDone: (err) => { order.push('1'); expect(err).toBeNull(); }
+            });
+            commandQueue.push({
+                type: 'arc',
+                deviceId: 'ARC_A_1',
+                command: 'off',
+                onDone: (err) => { order.push('2'); expect(err).toBeNull(); }
+            });
+            commandQueue.push({
+                type: 'arc',
+                deviceId: 'ARC_A_1',
+                command: 'on',
+                onDone: (err) => {
+                    order.push('3');
+                    expect(err).toBeNull();
+                    expect(order).toEqual(['1', '2', '3']);
+                    expect(mockLighting1.switchUp).toHaveBeenCalledTimes(2);
+                    expect(mockLighting1.switchDown).toHaveBeenCalledTimes(1);
+                    done();
+                }
+            });
+        });
+    });
+
     describe('traitement séquentiel (une commande à la fois)', () => {
         it('devrait traiter la deuxième commande seulement après la fin de la première', (done) => {
             let firstDone = false;

@@ -222,6 +222,10 @@ let lighting1Handler = null;
 let lighting2Handler = null;
 let mqttHelper = null;
 let rfxtrxReady = false; // Indicateur que RFXCOM est prêt à recevoir des commandes
+let consecutiveTimeoutCount = 0; // Timeouts consécutifs pour déclencher une reconnexion
+let reconnectingRFXCOM = false;   // Évite de lancer plusieurs reconnexions en parallèle
+let lastCommandSentAt = 0;        // Dernière fin de commande (pour keepalive)
+let keepaliveIntervalId = null;   // Timer keepalive série
 
 // Récupérer les paramètres MQTT depuis les variables d'environnement (pour utilisation après initialisation RFXCOM)
 const MQTT_HOST = process.env.MQTT_HOST || '';
@@ -498,14 +502,74 @@ function initializeMQTT() {
 }
 
 // Initialise la file d'attente des commandes RFXCOM (une commande à la fois vers le module)
+// Enregistre le résultat d'une commande (succès ou erreur) et déclenche une reconnexion après N timeouts consécutifs
+function recordCommandResult(err) {
+    lastCommandSentAt = Date.now();
+    if (err && (err.message || '').includes('timed out')) {
+        consecutiveTimeoutCount += 1;
+        if (consecutiveTimeoutCount >= 5) {
+            log('warn', `⚠️ ${consecutiveTimeoutCount} timeouts consécutifs → reconnexion RFXCOM programmée`);
+            consecutiveTimeoutCount = 0;
+            scheduleRFXCOMReconnect();
+        }
+    } else {
+        consecutiveTimeoutCount = 0;
+    }
+}
+
+// Ferme le port RFXCOM puis réinitialise après un délai (sans redémarrer tout l'add-on)
+function scheduleRFXCOMReconnect() {
+    if (reconnectingRFXCOM) return;
+    reconnectingRFXCOM = true;
+    log('info', '🔄 Reconnexion RFXCOM dans 3 secondes (fermeture puis réouverture du port)...');
+    closeRFXCOM();
+    setTimeout(() => {
+        initializeRFXCOMAsync();
+        // Libérer le verrou après un délai suffisant pour que l'init se termine (ou échoue)
+        setTimeout(() => {
+            reconnectingRFXCOM = false;
+        }, 20000);
+    }, 3000);
+}
+
+const KEEPALIVE_INTERVAL_MS = 12000;  // Toutes les 12 s
+const KEEPALIVE_IDLE_MS = 10000;      // Envoyer un keepalive si aucune commande depuis 10 s
+
+function startKeepalive() {
+    if (keepaliveIntervalId) return;
+    keepaliveIntervalId = setInterval(() => {
+        if (!rfxtrxReady || !rfxtrx || reconnectingRFXCOM) return;
+        if (commandQueue.isProcessing()) return;
+        if (Date.now() - lastCommandSentAt < KEEPALIVE_IDLE_MS) return;
+        try {
+            rfxtrx.getRFXStatus((err) => {
+                if (err) log('debug', 'Keepalive RFXCOM:', err.message);
+            });
+        } catch (e) {
+            log('debug', 'Keepalive RFXCOM:', e.message);
+        }
+    }, KEEPALIVE_INTERVAL_MS);
+    log('info', '🔄 Keepalive RFXCOM activé (toutes les 12 s si inactif > 10 s)');
+}
+
+function stopKeepalive() {
+    if (keepaliveIntervalId) {
+        clearInterval(keepaliveIntervalId);
+        keepaliveIntervalId = null;
+    }
+}
+
 function initCommandQueue() {
+    lastCommandSentAt = Date.now(); // évite un keepalive dans les 10 s suivant le prêt
     commandQueue.init({
         getDevices: () => devices,
         getLighting1: () => lighting1Handler,
         getLighting2: () => lighting2Handler,
-        log
+        log,
+        onCommandComplete: recordCommandResult
     });
     log('info', '📋 File d\'attente des commandes RFXCOM initialisée (une commande à la fois)');
+    startKeepalive();
 }
 
 // Fonction pour arrêter proprement l'add-on en cas d'erreur RFXCOM critique
@@ -540,8 +604,12 @@ function initializeRFXCOMAsync() {
         }
 
         const debugMode = LOG_LEVEL === 'debug';
+        // concurrency: 1 = une seule commande en vol à la fois (évite timeouts groupés :
+        // le package appelle le callback au "write" et non à l'ACK, donc sans ça plusieurs commandes partent d'un coup)
         rfxtrx = new rfxcom.RfxCom(SERIAL_PORT, {
-            debug: debugMode
+            debug: debugMode,
+            concurrency: 1,
+            timeout: 12000
         });
 
         // Ajouter un timeout pour éviter que l'initialisation bloque indéfiniment
@@ -902,6 +970,7 @@ function closeRFXCOM() {
         } catch (err) {
             log('warn', `⚠️ Erreur lors de la fermeture du port série: ${err.message}`);
         } finally {
+            stopKeepalive();
             rfxtrx = null;
             lighting1Handler = null;
             lighting2Handler = null;

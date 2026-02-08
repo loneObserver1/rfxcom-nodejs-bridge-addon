@@ -2,9 +2,19 @@
 
 Bridge Node.js pour contrôler les appareils RFXCOM via les protocoles ARC et AC (DIO Chacon).
 
-**Version actuelle : 2.1.14**
+**Version actuelle : 2.1.17**
 
 ## 🆕 Nouveautés récentes
+
+### Version 2.1.17
+- **Tests** : un appel, plusieurs appels en rafale (file d'attente).
+- **Dépendance** : node-rfxcom 2.6.4 ou plus recommandé (callback sur ACK/timeout).
+
+### Version 2.1.16
+- **Keepalive RFXCOM** : requête automatique toutes les 12 s si inactif > 10 s, pour éviter les timeouts après une pause (ex. lumières KO après volets quand la liaison reste inactive ~20 s).
+
+### Version 2.1.15
+- **Reconnexion automatique RFXCOM** : après 5 timeouts consécutifs, l'add-on ferme puis rouvre le port série (sans redémarrer l'add-on), pour corriger les dégradations de la liaison série au fil du temps.
 
 ### Version 2.1.14
 - **Correction build Docker** : ajout de `rfxcom_command_queue.js` dans le Dockerfile pour que l'add-on démarre correctement dans Home Assistant (évite l'erreur « Cannot find module './rfxcom_command_queue' »)
